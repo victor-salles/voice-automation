@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # Environment variables:
 #   OLLAMA_MODEL        Default Ollama model (default: qwen2.5:7b)
-#   OLLAMA_BASE_URL     Ollama API URL (default: http://localhost:11434/v1)
+#   OLLAMA_HOST         Ollama server URL (default: http://localhost:11434)
 #   VOICE_AGENT_PYTHON  Python interpreter (default: python3)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -73,19 +73,21 @@ class ClaudeBackend(LLMBackend):
 
 
 class OllamaBackend(LLMBackend):
-    """Ollama backend via OpenAI-compatible chat API (no external deps).
+    """Ollama backend via native /api/chat endpoint (no external deps).
+
+    Uses Ollama's native API which supports tool calling directly.
+    No OpenAI SDK needed — just stdlib urllib.
 
     Configure via environment variables:
         OLLAMA_MODEL    Model name (default: qwen2.5:7b)
-        OLLAMA_BASE_URL API base URL (default: http://localhost:11434/v1)
+        OLLAMA_HOST     Ollama server URL (default: http://localhost:11434)
     """
 
-    def __init__(self, model: str | None = None, base_url: str | None = None):
+    def __init__(self, model: str | None = None, host: str | None = None):
         import os
         self._model = model or os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
-        self._base_url = (
-            base_url
-            or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        self._host = (
+            host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         ).rstrip("/")
 
     def name(self) -> str:
@@ -95,18 +97,19 @@ class OllamaBackend(LLMBackend):
         import json
         import urllib.request
 
-        openai_tools = _to_openai_tools(tools)
-        openai_messages = _to_openai_messages(messages)
+        ollama_tools = _to_ollama_tools(tools)
+        ollama_messages = _to_ollama_messages(messages)
 
         body = {
             "model": self._model,
-            "messages": openai_messages,
+            "messages": ollama_messages,
+            "stream": False,
         }
-        if openai_tools:
-            body["tools"] = openai_tools
+        if ollama_tools:
+            body["tools"] = ollama_tools
 
         req = urllib.request.Request(
-            f"{self._base_url}/chat/completions",
+            f"{self._host}/api/chat",
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -117,22 +120,22 @@ class OllamaBackend(LLMBackend):
                 data = json.loads(resp.read())
         except urllib.error.URLError as e:
             raise ConnectionError(
-                f"Cannot reach Ollama at {self._base_url} — "
+                f"Cannot reach Ollama at {self._host} — "
                 f"is 'ollama serve' running? ({e})"
             )
 
-        choice = data["choices"][0]
-        message = choice["message"]
-        text = message.get("content")
+        message = data["message"]
+        text = message.get("content") or None
         tool_calls = []
 
         for tc in message.get("tool_calls") or []:
-            args = tc["function"]["arguments"]
+            func = tc.get("function", {})
+            args = func.get("arguments", {})
             if isinstance(args, str):
                 args = json.loads(args)
             tool_calls.append({
                 "id": tc.get("id", f"call_{len(tool_calls)}"),
-                "name": tc["function"]["name"],
+                "name": func["name"],
                 "arguments": args,
             })
 
@@ -158,22 +161,36 @@ def _strip_system(messages: list) -> list:
     return [m for m in messages if m.get("role") != "system"]
 
 
-def _to_openai_messages(messages: list) -> list:
-    """Convert our message format to OpenAI format."""
+def _to_ollama_messages(messages: list) -> list:
+    """Convert our internal message format to Ollama's /api/chat format.
+
+    Ollama uses the same role names (system/user/assistant/tool) but
+    tool results go as role=tool with content as a string.
+    """
+    import json
+
     result = []
     for msg in messages:
         role = msg["role"]
         content = msg.get("content", "")
 
-        if role == "system":
-            result.append({"role": "system", "content": content})
-        elif role == "user":
-            result.append({"role": "user", "content": content})
+        if role in ("system", "user"):
+            # User messages may contain tool_result blocks (Claude format)
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        result.append({
+                            "role": "tool",
+                            "content": str(block.get("content", "")),
+                        })
+            else:
+                result.append({"role": role, "content": content})
+
         elif role == "assistant":
             if isinstance(content, str):
                 result.append({"role": "assistant", "content": content})
             elif isinstance(content, list):
-                # Claude-style content blocks → OpenAI format
+                # Claude-style content blocks → Ollama format
                 text_parts = []
                 tool_calls = []
                 for block in content:
@@ -181,32 +198,35 @@ def _to_openai_messages(messages: list) -> list:
                         if block.get("type") == "text":
                             text_parts.append(block["text"])
                         elif block.get("type") == "tool_use":
-                            import json
                             tool_calls.append({
-                                "id": block["id"],
-                                "type": "function",
                                 "function": {
                                     "name": block["name"],
-                                    "arguments": json.dumps(block["input"]),
+                                    "arguments": block.get("input", {}),
                                 },
                             })
-                msg_out = {"role": "assistant"}
-                if text_parts:
-                    msg_out["content"] = "\n".join(text_parts)
+                msg_out = {
+                    "role": "assistant",
+                    "content": "\n".join(text_parts) if text_parts else "",
+                }
                 if tool_calls:
                     msg_out["tool_calls"] = tool_calls
                 result.append(msg_out)
+
         elif role == "tool":
             result.append({
                 "role": "tool",
-                "tool_call_id": msg.get("tool_use_id", ""),
-                "content": content,
+                "content": content if isinstance(content, str) else json.dumps(content),
             })
+
     return result
 
 
-def _to_openai_tools(tools: list) -> list:
-    """Convert Anthropic tool format to OpenAI function format."""
+def _to_ollama_tools(tools: list) -> list:
+    """Convert Anthropic tool format to Ollama tool format.
+
+    Ollama uses the OpenAI function-calling schema:
+    {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    """
     result = []
     for tool in tools:
         result.append({

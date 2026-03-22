@@ -145,7 +145,14 @@ local function playItem(idx)
     playNext()
   end, args)
 
-  speakTask:setEnvironment({ KOKORO_DEBUG = "1" })
+  local env = hs.execute("env", true):gsub("\n$", "")
+  local envTable = {}
+  for line in env:gmatch("[^\n]+") do
+    local k, v = line:match("^([^=]+)=(.*)")
+    if k then envTable[k] = v end
+  end
+  envTable["KOKORO_DEBUG"] = "1"
+  speakTask:setEnvironment(envTable)
   speakTask:start()
 end
 

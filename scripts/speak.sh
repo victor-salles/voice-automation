@@ -20,6 +20,14 @@ debug() {
   fi
 }
 
+notify_error() {
+  local msg="$1"
+  debug "ERROR: $msg"
+  echo "TTS: $msg" >&2
+  # Play system error sound (non-blocking, unobtrusive)
+  afplay /System/Library/Sounds/Basso.aiff &
+}
+
 # Parse optional flags
 while [[ "${1:-}" == --* ]]; do
   case "$1" in
@@ -42,7 +50,7 @@ fi
 debug "raw_text=$(echo "$TEXT" | head -c 200)"
 
 if [ -z "$TEXT" ]; then
-  osascript -e 'display notification "No text selected or in clipboard" with title "Kokoro TTS"'
+  notify_error "No text selected or in clipboard"
   exit 1
 fi
 
@@ -77,7 +85,7 @@ if [ -x "$FFPLAY" ]; then
     | "$FFPLAY" -nodisp -autoexit -loglevel quiet -i pipe:0
 
   if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-    osascript -e 'display notification "Kokoro server is not running" with title "TTS Failed"'
+    notify_error "Kokoro server is not running"
     exit 1
   fi
 else
@@ -90,7 +98,7 @@ else
     -d "{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"wav\"}")
 
   if [ "$HTTP_CODE" != "200" ]; then
-    osascript -e "display notification \"Kokoro error: HTTP ${HTTP_CODE} - is the server running?\" with title \"TTS Failed\""
+    notify_error "Kokoro error: HTTP ${HTTP_CODE} - is the server running?"
     exit 1
   fi
 

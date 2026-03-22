@@ -3,11 +3,17 @@ set -euo pipefail
 
 # voice-agent — CLI entry point for the voice assistant
 # Usage:
-#   voice-agent                     Start interactive session (Claude backend)
-#   voice-agent --backend ollama    Use Ollama instead of Claude
-#   voice-agent --no-confirm        Auto-approve all tool executions
-#   voice-agent --new               Start fresh conversation
-#   voice-agent ask "question"      One-shot: ask and exit
+#   voice-agent                         Start interactive session (Ollama)
+#   voice-agent --backend claude        Use Claude API instead
+#   voice-agent --model qwen3:8b        Override model
+#   voice-agent --no-confirm            Auto-approve all tool executions
+#   voice-agent --new                   Start fresh conversation
+#   voice-agent ask "question"          One-shot: ask and exit
+#
+# Environment variables:
+#   OLLAMA_MODEL        Default Ollama model (default: qwen2.5:7b)
+#   OLLAMA_BASE_URL     Ollama API URL (default: http://localhost:11434/v1)
+#   VOICE_AGENT_PYTHON  Python interpreter (default: python3)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="${VOICE_AGENT_PYTHON:-python3}"

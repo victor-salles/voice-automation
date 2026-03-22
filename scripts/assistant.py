@@ -5,11 +5,14 @@ Thin agent loop: user input → LLM → tool execution → response.
 Runs in terminal for P0 (typed input), voice input added in P1.
 
 Usage:
-    python3 assistant.py                    # Claude backend (default)
-    python3 assistant.py --backend ollama   # Ollama backend
+    python3 assistant.py                    # Ollama backend (default)
+    python3 assistant.py --backend claude   # Claude API backend
+    python3 assistant.py --model qwen3:8b   # Override model
     python3 assistant.py --no-confirm       # Skip tool confirmations
     python3 assistant.py --new              # Start fresh conversation
 """
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
@@ -24,13 +27,15 @@ def load_system_prompt() -> str:
     return "You are a helpful macOS voice assistant."
 
 
-def create_backend(name: str):
+def create_backend(name: str, model: str | None = None):
     from assistant_backends import ClaudeBackend, OllamaBackend
 
     if name == "claude":
-        return ClaudeBackend()
+        kwargs = {"model": model} if model else {}
+        return ClaudeBackend(**kwargs)
     elif name == "ollama":
-        return OllamaBackend()
+        kwargs = {"model": model} if model else {}
+        return OllamaBackend(**kwargs)
     else:
         print(f"Unknown backend: {name}", file=sys.stderr)
         sys.exit(1)
@@ -131,8 +136,13 @@ def main():
     parser.add_argument(
         "--backend",
         choices=["claude", "ollama"],
-        default="claude",
-        help="LLM backend to use (default: claude)",
+        default="ollama",
+        help="LLM backend (default: ollama)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override model name (e.g. qwen2.5:14b, claude-sonnet-4-20250514)",
     )
     parser.add_argument(
         "--no-confirm",
@@ -159,7 +169,7 @@ def main():
             print("(Resumed previous conversation. Use 'clear' to reset.)")
 
     try:
-        backend = create_backend(args.backend)
+        backend = create_backend(args.backend, model=args.model)
     except ImportError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

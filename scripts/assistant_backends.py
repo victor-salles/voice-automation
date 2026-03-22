@@ -8,6 +8,8 @@ All backends return a unified response format:
     "stop_reason": "end_turn" | "tool_use",
 }
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 
@@ -71,54 +73,73 @@ class ClaudeBackend(LLMBackend):
 
 
 class OllamaBackend(LLMBackend):
-    """Ollama backend via OpenAI-compatible API."""
+    """Ollama backend via OpenAI-compatible chat API (no external deps).
 
-    def __init__(
-        self,
-        model: str = "qwen2.5:7b",
-        base_url: str = "http://localhost:11434/v1",
-    ):
-        try:
-            from openai import OpenAI
-        except ImportError:
-            raise ImportError(
-                "Install the OpenAI SDK: pip3 install openai"
-            )
-        self._client = OpenAI(base_url=base_url, api_key="ollama")
-        self._model = model
+    Configure via environment variables:
+        OLLAMA_MODEL    Model name (default: qwen2.5:7b)
+        OLLAMA_BASE_URL API base URL (default: http://localhost:11434/v1)
+    """
+
+    def __init__(self, model: str | None = None, base_url: str | None = None):
+        import os
+        self._model = model or os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+        self._base_url = (
+            base_url
+            or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        ).rstrip("/")
 
     def name(self) -> str:
         return f"Ollama ({self._model})"
 
     def chat(self, messages: list, tools: list) -> dict:
+        import json
+        import urllib.request
+
         openai_tools = _to_openai_tools(tools)
         openai_messages = _to_openai_messages(messages)
 
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=openai_messages,
-            tools=openai_tools if openai_tools else None,
+        body = {
+            "model": self._model,
+            "messages": openai_messages,
+        }
+        if openai_tools:
+            body["tools"] = openai_tools
+
+        req = urllib.request.Request(
+            f"{self._base_url}/chat/completions",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
 
-        choice = response.choices[0]
-        text = choice.message.content
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.URLError as e:
+            raise ConnectionError(
+                f"Cannot reach Ollama at {self._base_url} — "
+                f"is 'ollama serve' running? ({e})"
+            )
+
+        choice = data["choices"][0]
+        message = choice["message"]
+        text = message.get("content")
         tool_calls = []
 
-        if choice.message.tool_calls:
-            import json
-            for tc in choice.message.tool_calls:
-                tool_calls.append({
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": json.loads(tc.function.arguments),
-                })
-
-        stop_reason = "tool_use" if tool_calls else "end_turn"
+        for tc in message.get("tool_calls") or []:
+            args = tc["function"]["arguments"]
+            if isinstance(args, str):
+                args = json.loads(args)
+            tool_calls.append({
+                "id": tc.get("id", f"call_{len(tool_calls)}"),
+                "name": tc["function"]["name"],
+                "arguments": args,
+            })
 
         return {
             "text": text,
             "tool_calls": tool_calls,
-            "stop_reason": stop_reason,
+            "stop_reason": "tool_use" if tool_calls else "end_turn",
         }
 
 

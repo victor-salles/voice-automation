@@ -170,8 +170,9 @@ def test_detect_returns_en_for_pt_score_exactly_one():
     assert detect("da") == "en"
 
 
-def test_detect_returns_en_for_portuguese_words_not_in_only_list():
-    assert detect("muito bem obrigado") == "en"
+def test_detect_returns_pt_for_common_portuguese_content_words():
+    # "muito" is a PT function word, "bem" and "obrigado" are PT content words
+    assert detect("muito bem obrigado") == "pt"
 
 
 def test_detect_returns_en_for_english_phrase_without_portuguese_chars():
@@ -248,3 +249,15 @@ def test_detect_returns_pt_for_portuguese_word_pelos():
 
 def test_detect_returns_pt_for_portuguese_word_pelas():
     assert detect("pelas pelas") == "pt"
+
+
+def test_detect_returns_pt_for_testando_sentence_without_accents():
+    assert detect("Testando, testando um, dois, tres.") == "pt"
+
+
+def test_detect_returns_pt_for_content_words_like_preciso_and_agora():
+    assert detect("Preciso fazer isso agora.") == "pt"
+
+
+def test_detect_returns_pt_for_counting_words():
+    assert detect("um dois tres quatro cinco") == "pt"

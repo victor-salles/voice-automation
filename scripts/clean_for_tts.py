@@ -20,11 +20,10 @@ def strip_inline_code(text: str) -> str:
 
 
 def strip_markdown(text: str) -> str:
-    # Headers: strip marker, ensure trailing punctuation for pause
     text = re.sub(
         r'^#{1,6}\s+(.+)$',
         lambda m: _ensure_period(m.group(1)),
-        text, flags=re.MULTILINE
+        text, flags=re.MULTILINE,
     )
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'__(.+?)__', r'\1', text)
@@ -44,26 +43,45 @@ def strip_lists(text: str) -> str:
     text = re.sub(
         r'^\s*[-*+]\s+(.+)$',
         lambda m: _ensure_period(m.group(1)),
-        text, flags=re.MULTILINE
+        text, flags=re.MULTILINE,
     )
     text = re.sub(
         r'^\s*\d+\.\s+(.+)$',
         lambda m: _ensure_period(m.group(1)),
-        text, flags=re.MULTILINE
+        text, flags=re.MULTILINE,
     )
     return text
 
 
 def strip_special(text: str) -> str:
+    # Arrows → natural language
+    text = re.sub(r'[→⟶⟹➡►▸]', ' to ', text)
+    text = re.sub(r'[←⟵⟸⬅◄◂]', ' from ', text)
+    # macOS keyboard symbols
+    text = re.sub(r'[⌥]', 'Option ', text)
+    text = re.sub(r'[⌘]', 'Command ', text)
+    text = re.sub(r'[⇧]', 'Shift ', text)
+    text = re.sub(r'[⌃]', 'Control ', text)
+    # Em/en dashes → comma for pause
+    text = re.sub(r'\s*[—–]\s*', ', ', text)
+    # Pipes, blockquotes
     text = re.sub(r'[|>]', ' ', text)
     text = re.sub(r'[-=]{3,}', '', text)
+    # Braces and brackets
     text = re.sub(r'\{[^}]*\}', '', text)
     text = re.sub(r'\[([^\]]*)\]', r'\1', text)
+    # Emojis (Unicode blocks for symbols/emoticons/etc.)
+    text = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA6F]', '', text)
     return text
 
 
 def normalize(text: str) -> str:
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    """Flatten to single paragraph. All line breaks become sentence boundaries."""
+    # Any line not ending in punctuation gets a period
+    text = re.sub(r'([^\s.!?:;,])\s*\n', r'\1. ', text)
+    # Lines already ending in punctuation: just add space
+    text = re.sub(r'\n', ' ', text)
+    # Collapse whitespace
     text = re.sub(r'[ \t]+', ' ', text)
     return text.strip()
 

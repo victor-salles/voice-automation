@@ -44,9 +44,12 @@ HAMMERSPOON
 The server is managed by a LaunchAgent that starts on login:
 
 ```bash
-# Copy the LaunchAgent and start script
-cp config/launchd/com.local.kokoro.plist ~/Library/LaunchAgents/
+# Copy start script
 cp config/launchd/start.sh ~/.kokoro-fastapi/start.sh
+
+# Install plist (replaces __HOME__ with your actual home directory)
+sed "s|__HOME__|$HOME|g" config/launchd/com.local.kokoro.plist \
+  > ~/Library/LaunchAgents/com.local.kokoro.plist
 
 # Load it (starts immediately + on every login)
 launchctl load ~/Library/LaunchAgents/com.local.kokoro.plist

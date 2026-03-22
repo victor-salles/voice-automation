@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  NOTE: macOS plists do not support $HOME or ~.
+  Replace __HOME__ with your actual home directory before installing:
+    sed "s|__HOME__|$HOME|g" com.local.kokoro.plist > ~/Library/LaunchAgents/com.local.kokoro.plist
+-->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -8,11 +13,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/victorrodrigues/.kokoro-fastapi/start.sh</string>
+        <string>__HOME__/.kokoro-fastapi/start.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/victorrodrigues/.kokoro-fastapi</string>
+    <string>__HOME__/.kokoro-fastapi</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -21,9 +26,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/victorrodrigues/.kokoro-fastapi/kokoro.log</string>
+    <string>/tmp/kokoro.stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/victorrodrigues/.kokoro-fastapi/kokoro.err</string>
+    <string>/tmp/kokoro.stderr.log</string>
 </dict>
 </plist>

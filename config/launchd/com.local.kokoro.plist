@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local.kokoro</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/victorrodrigues/.kokoro-fastapi/start.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/victorrodrigues/.kokoro-fastapi</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victorrodrigues/.kokoro-fastapi/kokoro.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victorrodrigues/.kokoro-fastapi/kokoro.err</string>
+</dict>
+</plist>

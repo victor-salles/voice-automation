@@ -158,8 +158,10 @@ class ToolSession:
     The model discovers and selects tools as needed.
     """
 
-    def __init__(self):
+    def __init__(self, preload: bool = True):
         self._selected: set[str] = set()
+        if preload:
+            self._selected = set(TOOL_CATALOG.keys())
 
     @property
     def active_tools(self) -> list[dict]:

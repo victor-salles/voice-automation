@@ -8,8 +8,18 @@ from assistant_tools import (
 )
 
 
-def test_initial_active_tools_contains_only_discover_and_select():
+def test_initial_active_tools_preloads_all_catalog_tools():
     session = ToolSession()
+    active = session.active_tools
+    names = [t["name"] for t in active]
+    assert "discover_tools" in names
+    assert "select_tools" in names
+    for tool_name in TOOL_CATALOG:
+        assert tool_name in names
+
+
+def test_no_preload_contains_only_discover_and_select():
+    session = ToolSession(preload=False)
     active = session.active_tools
     names = [t["name"] for t in active]
     assert names == ["discover_tools", "select_tools"]
@@ -86,7 +96,6 @@ def test_active_tools_includes_meta_tools_plus_selected():
     assert "select_tools" in names
     assert "search_web" in names
     assert "speak" in names
-    assert len(names) == 4
 
 
 def test_selecting_all_tools_makes_all_active():

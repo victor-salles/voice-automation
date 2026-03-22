@@ -2,6 +2,7 @@
 -- ⌥S  → toggle speak/stop (queues if already speaking)
 -- ⌥⇧V → voice picker popup
 -- Menu bar ● → dropdown with queue, history, voice selector
+-- HTTP server on localhost:18880 for external control (voice-ctl, Raycast)
 --
 -- Install: add to ~/.hammerspoon/init.lua:
 --   package.path = os.getenv("HOME") .. "/code/voice-automation/config/hammerspoon/?.lua;" .. package.path
@@ -10,6 +11,7 @@
 local SCRIPT = os.getenv("HOME") .. "/code/voice-automation/scripts/speak.sh"
 local DETECT = os.getenv("HOME") .. "/code/voice-automation/scripts/detect_lang.py"
 local HEALTH_URL = "http://localhost:8880/v1/audio/voices"
+local CONTROL_PORT = tonumber(os.getenv("KOKORO_CONTROL_PORT")) or 18880
 local MAX_HISTORY = 20
 local PREVIEW_LEN = 45
 
@@ -88,6 +90,7 @@ local dot = hs.menubar.new()
 local colors = {
   ready    = { red = 0.30, green = 0.75, blue = 0.35, alpha = 1 },
   speaking = { red = 0.25, green = 0.50, blue = 1.00, alpha = 1 },
+  paused   = { red = 1.00, green = 0.75, blue = 0.00, alpha = 1 },
   down     = { red = 0.85, green = 0.25, blue = 0.25, alpha = 1 },
 }
 
@@ -109,14 +112,38 @@ end
 -- ── Core playback ──
 
 local function stopSpeaking()
+  -- Resume paused process before killing (prevents zombie STOP'd processes)
+  os.execute("pkill -CONT -x ffplay 2>/dev/null")
   os.execute("pkill -x ffplay 2>/dev/null; pkill -x afplay 2>/dev/null")
   if speakTask and speakTask:isRunning() then speakTask:terminate() end
-  if currentIdx > 0 and queue[currentIdx] and queue[currentIdx].status == "playing" then
-    queue[currentIdx].status = "stopped"
+  if currentIdx > 0 and queue[currentIdx] then
+    local s = queue[currentIdx].status
+    if s == "playing" or s == "paused" then
+      queue[currentIdx].status = "stopped"
+    end
   end
   speakTask = nil
   currentIdx = 0
   setState("ready")
+end
+
+local function togglePause()
+  if currentState == "speaking" then
+    os.execute("pkill -STOP -x ffplay 2>/dev/null")
+    if currentIdx > 0 and queue[currentIdx] then
+      queue[currentIdx].status = "paused"
+    end
+    setState("paused")
+    return true
+  elseif currentState == "paused" then
+    os.execute("pkill -CONT -x ffplay 2>/dev/null")
+    if currentIdx > 0 and queue[currentIdx] then
+      queue[currentIdx].status = "playing"
+    end
+    setState("speaking")
+    return true
+  end
+  return false
 end
 
 local playNext  -- forward declaration
@@ -255,13 +282,22 @@ local function buildMenu()
   table.insert(menu, { title = statusLabel, disabled = true })
   table.insert(menu, { title = "-" })
 
-  -- Now playing
-  if currentIdx > 0 and queue[currentIdx] and queue[currentIdx].status == "playing" then
+  -- Now playing / paused
+  if currentIdx > 0 and queue[currentIdx] then
     local item = queue[currentIdx]
     local flag = flagForLang(item.lang)
-    table.insert(menu, { title = "▶  " .. flag .. "  " .. preview(item.text), disabled = true })
-    table.insert(menu, { title = "⏹  Stop", fn = stopSpeaking })
-    table.insert(menu, { title = "-" })
+
+    if item.status == "playing" then
+      table.insert(menu, { title = "▶  " .. flag .. "  " .. preview(item.text), disabled = true })
+      table.insert(menu, { title = "⏸  Pause", fn = togglePause })
+      table.insert(menu, { title = "⏹  Stop", fn = stopSpeaking })
+      table.insert(menu, { title = "-" })
+    elseif item.status == "paused" then
+      table.insert(menu, { title = "⏸  " .. flag .. "  " .. preview(item.text), disabled = true })
+      table.insert(menu, { title = "▶  Resume", fn = togglePause })
+      table.insert(menu, { title = "⏹  Stop", fn = stopSpeaking })
+      table.insert(menu, { title = "-" })
+    end
   end
 
   -- Queued items
@@ -374,11 +410,62 @@ hs.hotkey.bind({"alt", "shift"}, "v", function()
   showVoiceChooser()
 end)
 
+-- ── HTTP control server ──
+
+local function statusJson()
+  local currentText = ""
+  if currentIdx > 0 and queue[currentIdx] then
+    currentText = preview(queue[currentIdx].text)
+  end
+  local queuedCount = 0
+  for _, item in ipairs(queue) do
+    if item.status == "queued" then queuedCount = queuedCount + 1 end
+  end
+  return '{"state":"' .. currentState
+    .. '","currentText":"' .. currentText:gsub('"', '\\"')
+    .. '","queueLength":' .. queuedCount .. '}'
+end
+
+local server = hs.httpserver.new(false, false)
+
+server:setCallback(function(method, path, headers, body)
+  if method == "GET" and path == "/status" then
+    return statusJson(), 200, { ["Content-Type"] = "application/json" }
+
+  elseif method == "POST" and path == "/speak" then
+    local text = body
+    if not text or text == "" then
+      return '{"error":"no text provided"}', 400, { ["Content-Type"] = "application/json" }
+    end
+    addToQueue(text)
+    return '{"ok":true}', 200, { ["Content-Type"] = "application/json" }
+
+  elseif method == "POST" and path == "/stop" then
+    stopSpeaking()
+    return '{"ok":true}', 200, { ["Content-Type"] = "application/json" }
+
+  elseif method == "POST" and path == "/pause" then
+    local toggled = togglePause()
+    if toggled then
+      return '{"ok":true,"state":"' .. currentState .. '"}', 200, { ["Content-Type"] = "application/json" }
+    else
+      return '{"error":"nothing to pause"}', 400, { ["Content-Type"] = "application/json" }
+    end
+
+  else
+    return '{"error":"not found"}', 404, { ["Content-Type"] = "application/json" }
+  end
+end)
+
+server:setPort(CONTROL_PORT)
+server:start()
+hs.printf("Kokoro control server started on port %d", CONTROL_PORT)
+
 -- ── Health check ──
 
 local function checkHealth()
   hs.http.asyncGet(HEALTH_URL, nil, function(code)
-    if currentState ~= "speaking" then
+    if currentState ~= "speaking" and currentState ~= "paused" then
       setState(code == 200 and "ready" or "down")
     end
   end)

@@ -4,6 +4,7 @@
 #        speak.sh                   — copies current selection via Cmd+C, then speaks it
 #        KOKORO_VOICE=af_heart speak.sh "text"  — force a specific voice
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPEED="${KOKORO_SPEED:-1.1}"
 FFPLAY="/opt/homebrew/bin/ffplay"
 KOKORO_URL="http://localhost:8880/v1/audio/speech"
@@ -11,6 +12,15 @@ WAV_FILE="${TMPDIR:-/tmp}/kokoro_speak_${UID}.wav"
 
 PT_VOICE="${KOKORO_PT_VOICE:-pf_dora}"
 EN_VOICE="${KOKORO_EN_VOICE:-af_heart}"
+
+# Parse optional flags
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --voice) KOKORO_VOICE="$2"; shift 2 ;;
+    --speed) SPEED="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
 
 if [ -n "$1" ]; then
   TEXT="$1"
@@ -25,28 +35,15 @@ if [ -z "$TEXT" ]; then
   exit 1
 fi
 
+# Clean text for TTS (strip markdown, code blocks, URLs, etc.)
+TEXT=$(echo "$TEXT" | python3 "$SCRIPT_DIR/clean_for_tts.py")
+
 # Auto-detect language unless voice is explicitly set
 if [ -n "$KOKORO_VOICE" ]; then
   VOICE="$KOKORO_VOICE"
 else
-  DETECTED_LANG=$(echo "$TEXT" | python3 -c "
-import re, sys
-text = sys.stdin.read()
-pt_chars = len(re.findall(r'[ãõçÃÕÇ]', text))
-pt_accents = len(re.findall(r'[àáâéêíóôúÀÁÂÉÊÍÓÔÚ]', text))
-pt_words = len(re.findall(
-    r'\b(de|da|do|das|dos|em|na|no|nas|nos|para|por|com|uma|uns|umas'
-    r'|que|não|são|está|isso|como|mais|também|você|ele|ela|esse|essa'
-    r'|este|esta|já|muito|pode|seu|sua|ter|foi|havia|ou|mas|ao|aos'
-    r'|até|pelo|pela|pelos|pelas)\b', text.lower()))
-print('pt' if pt_chars * 3 + pt_accents * 2 + pt_words >= 2 else 'en')
-")
-
-  if [ "$DETECTED_LANG" = "pt" ]; then
-    VOICE="$PT_VOICE"
-  else
-    VOICE="$EN_VOICE"
-  fi
+  DETECTED_LANG=$(echo "$TEXT" | python3 "$SCRIPT_DIR/detect_lang.py")
+  VOICE=$([ "$DETECTED_LANG" = "pt" ] && echo "$PT_VOICE" || echo "$EN_VOICE")
 fi
 
 # Kill any previous playback
@@ -57,7 +54,7 @@ ENCODED=$(echo "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin
 
 PAYLOAD="{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"mp3\",\"stream\":true}"
 
-# Streaming mode: pipe audio directly to ffplay (playback starts in <1s)
+# Streaming mode: pipe audio directly to ffplay
 if [ -x "$FFPLAY" ]; then
   curl -s -N \
     -X POST "$KOKORO_URL" \

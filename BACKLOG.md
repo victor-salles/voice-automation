@@ -12,7 +12,7 @@
 - [ ] Voice selection popup — Hammerspoon chooser (⌥⇧V) to pick a voice before speaking
 - [ ] Reading speed control — hotkeys to adjust speed on the fly (⌥+ / ⌥-)
 - [ ] PDF reading — pipe PDF text extraction into speak.sh
-- [ ] True resume — sentence-level position tracking for resuming mid-text
+- [ ] Quick resume — paragraph-level position tracking for resuming mid-reading (Books, Articles, webpages, etc.)
 
 ## Done
 

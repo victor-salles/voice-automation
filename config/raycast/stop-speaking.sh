@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Required parameters:
 # @raycast.schemaVersion 1
@@ -10,5 +11,4 @@
 # @raycast.icon 🔇
 # @raycast.description Stop Kokoro TTS playback
 
-pkill -x ffplay 2>/dev/null
-pkill -x afplay 2>/dev/null
+"$HOME/code/voice-automation/scripts/voice-ctl" stop

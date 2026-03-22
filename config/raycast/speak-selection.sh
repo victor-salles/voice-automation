@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Required parameters:
 # @raycast.schemaVersion 1
@@ -17,4 +18,4 @@ if [ -z "$TEXT" ]; then
   exit 1
 fi
 
-"$HOME/code/voice-automation/scripts/speak.sh" "$TEXT" &
+"$HOME/code/voice-automation/scripts/voice-ctl" speak "$TEXT"

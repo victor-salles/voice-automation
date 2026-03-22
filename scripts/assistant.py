@@ -10,11 +10,14 @@ Usage:
     python3 assistant.py --model qwen3:8b   # Override model
     python3 assistant.py --no-confirm       # Skip tool confirmations
     python3 assistant.py --new              # Start fresh conversation
+
+Session logs are written to ~/.config/voice-automation/logs/
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -54,11 +57,12 @@ def confirm_tool_call(description: str, auto_approve: bool) -> bool:
     return response in ("y", "yes")
 
 
-def run_agent_loop(backend, memory, tools_module, auto_approve: bool) -> None:
+def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
     """Main agent loop: get input, call LLM, execute tools, repeat."""
     from assistant_tools import TOOLS, execute_tool, describe_tool_call
 
     print(f"\nVoice Assistant ({backend.name()})")
+    print(f"Session log: {logger.path}")
     print("Type a message, 'clear' to reset, or 'quit' to exit.\n")
 
     while True:
@@ -66,12 +70,14 @@ def run_agent_loop(backend, memory, tools_module, auto_approve: bool) -> None:
             user_input = input("You: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nBye.")
+            logger.log_session_end()
             break
 
         if not user_input:
             continue
         if user_input.lower() in ("quit", "exit", "q"):
             print("Bye.")
+            logger.log_session_end()
             break
         if user_input.lower() == "clear":
             memory.clear()
@@ -79,9 +85,27 @@ def run_agent_loop(backend, memory, tools_module, auto_approve: bool) -> None:
             continue
 
         memory.add_user(user_input)
+        logger.log_user_input(user_input)
 
         while True:
-            response = backend.chat(memory.messages, TOOLS)
+            llm_start = logger.log_llm_request(
+                message_count=len(memory.messages),
+                tool_count=len(TOOLS),
+            )
+
+            try:
+                response = backend.chat(memory.messages, TOOLS)
+            except ConnectionError as e:
+                print(f"\nError: {e}\n")
+                logger.log_error(str(e), context="llm_request")
+                break
+
+            logger.log_llm_response(
+                start_time=llm_start,
+                text=response["text"],
+                tool_calls=response["tool_calls"],
+                stop_reason=response["stop_reason"],
+            )
 
             if response["tool_calls"]:
                 # Build content blocks for memory
@@ -110,6 +134,7 @@ def run_agent_loop(backend, memory, tools_module, auto_approve: bool) -> None:
                         description, auto_approve
                     )
 
+                    tool_start = time.monotonic()
                     if approved:
                         result = execute_tool(tc["name"], tc["arguments"])
                         if not is_speak:
@@ -117,6 +142,15 @@ def run_agent_loop(backend, memory, tools_module, auto_approve: bool) -> None:
                     else:
                         result = "User denied this action."
                         print(f"  ✗ {description} (denied)")
+                    tool_duration = int((time.monotonic() - tool_start) * 1000)
+
+                    logger.log_tool_execution(
+                        name=tc["name"],
+                        arguments=tc["arguments"],
+                        result=result,
+                        approved=approved,
+                        duration_ms=tool_duration,
+                    )
 
                     memory.add_tool_result(tc["id"], result)
 
@@ -159,6 +193,7 @@ def main():
     # Add scripts dir to path for imports
     sys.path.insert(0, str(SCRIPT_DIR))
 
+    from assistant_logger import SessionLogger
     from assistant_memory import Memory
 
     system_prompt = load_system_prompt()
@@ -170,11 +205,16 @@ def main():
 
     try:
         backend = create_backend(args.backend, model=args.model)
-    except ImportError as e:
+    except (ImportError, ConnectionError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    run_agent_loop(backend, memory, None, auto_approve=args.no_confirm)
+    logger = SessionLogger(
+        backend_name=backend.name(),
+        model=backend._model,
+    )
+
+    run_agent_loop(backend, memory, logger, auto_approve=args.no_confirm)
 
 
 if __name__ == "__main__":

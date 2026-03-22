@@ -33,6 +33,9 @@ def strip_markdown(text: str) -> str:
 
 
 def strip_links(text: str) -> str:
+    # Images: ![alt text](url) → alt text (or nothing if no alt)
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
+    # Regular links: [text](url) → text
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
     text = re.sub(r'https?://\S+', 'link', text)
     return text

@@ -18,6 +18,10 @@
 - **Root cause**: Apple Shortcuts serializes clipboard/selection as an RTF temp file in `~/Library/Group Containers/...` and passes the file path (not the text) as `$1`. Additionally, the wav output file at `/tmp/kokoro_speak.wav` was owned by `root` (created by the LaunchAgent), so curl couldn't overwrite it — `afplay` kept playing the same stale audio file containing a spoken Library path.
 - **Fix**: Moved to Hammerspoon for hotkeys (bypasses Shortcuts entirely). Changed wav output to user-scoped path `$TMPDIR/kokoro_speak_$UID.wav`. Then moved to streaming mp3 via ffplay (no temp files at all).
 
+### Portuguese accents escaped to Unicode in TTS payload
+- **Root cause**: `json.dumps()` in speak.sh defaults to `ensure_ascii=True`, converting characters like `ç`, `ã`, `ó` to `\u00e7`, `\u00e3`, `\u00f3`. The Kokoro API received escaped sequences instead of raw UTF-8, causing the Brazilian Portuguese voice to mispronounce accented words (opção, nós, código).
+- **Fix**: Added `ensure_ascii=False` to the `json.dumps()` call so accented characters are sent as raw UTF-8 in the JSON payload.
+
 ### osascript error notification crashed on em dash
 - **Root cause**: The `—` (em dash) character in the osascript notification string caused an AppleScript syntax error, silently swallowing the "server not running" error.
 - **Fix**: Replaced em dash with regular hyphen.

@@ -1,10 +1,12 @@
 #!/bin/bash
-# speak.sh — reads selected/clipboard text with Kokoro TTS
+# speak.sh — reads selected/clipboard text with Kokoro TTS (streaming)
 # Usage: speak.sh [text]           — speaks the given text (auto-detects language)
 #        speak.sh                   — copies current selection via Cmd+C, then speaks it
 #        KOKORO_VOICE=af_heart speak.sh "text"  — force a specific voice
 
 SPEED="${KOKORO_SPEED:-1.1}"
+FFPLAY="/opt/homebrew/bin/ffplay"
+KOKORO_URL="http://localhost:8880/v1/audio/speech"
 WAV_FILE="${TMPDIR:-/tmp}/kokoro_speak_${UID}.wav"
 
 PT_VOICE="${KOKORO_PT_VOICE:-pf_dora}"
@@ -47,20 +49,39 @@ print('pt' if pt_chars * 3 + pt_accents * 2 + pt_words >= 2 else 'en')
   fi
 fi
 
-pkill afplay 2>/dev/null
+# Kill any previous playback
+pkill -x ffplay 2>/dev/null
+pkill -x afplay 2>/dev/null
 
 ENCODED=$(echo "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
 
-HTTP_CODE=$(curl -s \
-  -o "$WAV_FILE" \
-  -w "%{http_code}" \
-  -X POST http://localhost:8880/v1/audio/speech \
-  -H "Content-Type: application/json" \
-  -d "{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"wav\"}")
+PAYLOAD="{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"mp3\",\"stream\":true}"
 
-if [ "$HTTP_CODE" != "200" ]; then
-  osascript -e "display notification \"Kokoro error: HTTP ${HTTP_CODE} - is the server running?\" with title \"TTS Failed\""
-  exit 1
+# Streaming mode: pipe audio directly to ffplay (playback starts in <1s)
+if [ -x "$FFPLAY" ]; then
+  curl -s -N \
+    -X POST "$KOKORO_URL" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    | "$FFPLAY" -nodisp -autoexit -loglevel quiet -i pipe:0
+
+  if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    osascript -e 'display notification "Kokoro server is not running" with title "TTS Failed"'
+    exit 1
+  fi
+else
+  # Fallback: download full wav then play with afplay
+  HTTP_CODE=$(curl -s \
+    -o "$WAV_FILE" \
+    -w "%{http_code}" \
+    -X POST "$KOKORO_URL" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"wav\"}")
+
+  if [ "$HTTP_CODE" != "200" ]; then
+    osascript -e "display notification \"Kokoro error: HTTP ${HTTP_CODE} - is the server running?\" with title \"TTS Failed\""
+    exit 1
+  fi
+
+  afplay "$WAV_FILE"
 fi
-
-afplay "$WAV_FILE"

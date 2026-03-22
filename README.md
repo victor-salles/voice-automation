@@ -4,9 +4,10 @@ Local voice I/O stack for macOS (Apple Silicon). Fully offline STT + TTS with gl
 
 ## What it does
 
-- **TTS**: Select text in any app → press `⌥S` → Kokoro speaks it aloud
+- **TTS**: Select text in any app → press `⌥S` → Kokoro speaks it aloud (streaming — playback starts in <1s)
 - **STT**: Right-click any audio file → transcribe with mlx-whisper
 - **Auto language detection**: Portuguese text uses `pf_dora`, English text uses `af_heart`
+- **Menu bar indicator**: colored dot shows server status (🟢 ready, 🔵 speaking, 🔴 server down)
 
 ## Architecture
 
@@ -14,8 +15,9 @@ Local voice I/O stack for macOS (Apple Silicon). Fully offline STT + TTS with gl
 VOICE OUTPUT (TTS)
   Text source: selected text, clipboard, or CLI argument
     → speak.sh (auto-detects PT/EN)
-      → POST http://localhost:8880/v1/audio/speech (Kokoro FastAPI)
-        → afplay output.wav
+      → POST http://localhost:8880/v1/audio/speech (streaming mp3)
+        → ffplay (streams audio as it generates, no temp files)
+        → afplay fallback (downloads full wav first)
 
 VOICE INPUT (STT)
   Audio file → transcribe_audio.sh
@@ -27,6 +29,12 @@ KOKORO SERVER
   Repo:  ~/.kokoro-fastapi (remsky/Kokoro-FastAPI)
   Port:  8880
   Auto-start: LaunchAgent (com.local.kokoro)
+
+HAMMERSPOON
+  ⌥S  → speak selected text
+  ⌥⇧S → stop speaking
+  Menu bar: ● status indicator (ready/speaking/down)
+  Health check: pings Kokoro every 30s
 ```
 
 ## Setup
@@ -47,7 +55,7 @@ launchctl load ~/Library/LaunchAgents/com.local.kokoro.plist
 curl http://localhost:8880/v1/audio/voices
 ```
 
-### 2. Hammerspoon (global hotkeys)
+### 2. Hammerspoon (global hotkeys + menu bar indicator)
 
 ```bash
 brew install --cask hammerspoon
@@ -70,10 +78,7 @@ Grant Hammerspoon **Accessibility** access in System Settings → Privacy & Secu
 ### 3. Raycast (optional)
 
 ```bash
-# Point Raycast Script Commands directory to:
-~/.config/raycast/scripts/
-
-# Copy scripts there
+# Copy scripts to Raycast's script commands directory
 cp config/raycast/*.sh ~/.config/raycast/scripts/
 chmod +x ~/.config/raycast/scripts/speak-selection.sh
 chmod +x ~/.config/raycast/scripts/stop-speaking.sh
@@ -112,5 +117,6 @@ export KOKORO_PT_VOICE=pm_alex   # Brazilian male
 
 - [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) at `~/.kokoro-fastapi/`
 - [espeak-ng](https://github.com/espeak-ng/espeak-ng): `brew install espeak-ng`
+- [ffmpeg](https://ffmpeg.org/): `brew install ffmpeg` (provides ffplay for streaming playback)
 - [mlx-whisper](https://github.com/ml-explore/mlx-examples): for STT
-- [Hammerspoon](https://www.hammerspoon.org/): for global hotkeys
+- [Hammerspoon](https://www.hammerspoon.org/): for global hotkeys + menu bar indicator

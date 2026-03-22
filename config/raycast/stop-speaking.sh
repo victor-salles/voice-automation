@@ -10,4 +10,5 @@
 # @raycast.icon 🔇
 # @raycast.description Stop Kokoro TTS playback
 
-pkill afplay 2>/dev/null
+pkill -x ffplay 2>/dev/null
+pkill -x afplay 2>/dev/null

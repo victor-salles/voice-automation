@@ -109,3 +109,28 @@ def test_strip_special_no_special_characters():
 def test_strip_special_removes_nested_braces():
     result = strip_special("keep {outer {inner}} this")
     assert result == "keep } this"
+
+
+def test_strip_special_converts_forward_slash_to_comma():
+    result = strip_special("play/pause")
+    assert result == "play, pause"
+
+
+def test_strip_special_converts_multiple_slashes_to_commas():
+    result = strip_special("start/stop/restart")
+    assert result == "start, stop, restart"
+
+
+def test_strip_special_converts_slash_with_spaces():
+    result = strip_special("option A / option B")
+    assert result == "option A ,  option B"
+
+
+def test_strip_special_converts_and_or_slash():
+    result = strip_special("and/or")
+    assert result == "and, or"
+
+
+def test_strip_special_preserves_portuguese_with_slashes():
+    result = strip_special("opção/escolha")
+    assert result == "opção, escolha"

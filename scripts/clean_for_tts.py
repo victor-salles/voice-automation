@@ -65,8 +65,10 @@ def strip_special(text: str) -> str:
     text = re.sub(r'[⌘]', 'Command ', text)
     text = re.sub(r'[⇧]', 'Shift ', text)
     text = re.sub(r'[⌃]', 'Control ', text)
-    # Em/en dashes → comma for pause
+    # Em/en dashes → comma for natural pause
     text = re.sub(r'\s*[—–]\s*', ', ', text)
+    # Forward slashes → comma for pause
+    text = re.sub(r'/', ', ', text)
     # Pipes, blockquotes
     text = re.sub(r'[|>]', ' ', text)
     text = re.sub(r'[-=]{3,}', '', text)

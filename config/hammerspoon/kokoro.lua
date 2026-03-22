@@ -145,6 +145,7 @@ local function playItem(idx)
     playNext()
   end, args)
 
+  speakTask:setEnvironment({ KOKORO_DEBUG = "1" })
   speakTask:start()
 end
 

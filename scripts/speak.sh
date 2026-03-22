@@ -9,9 +9,16 @@ SPEED="${KOKORO_SPEED:-1.1}"
 FFPLAY="/opt/homebrew/bin/ffplay"
 KOKORO_URL="http://localhost:8880/v1/audio/speech"
 WAV_FILE="${TMPDIR:-/tmp}/kokoro_speak_${UID}.wav"
+LOG_FILE="${TMPDIR:-/tmp}/kokoro_debug.log"
 
 PT_VOICE="${KOKORO_PT_VOICE:-pf_dora}"
 EN_VOICE="${KOKORO_EN_VOICE:-af_heart}"
+
+debug() {
+  if [ "${KOKORO_DEBUG:-0}" = "1" ]; then
+    echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"
+  fi
+}
 
 # Parse optional flags
 while [[ "${1:-}" == --* ]]; do
@@ -24,11 +31,15 @@ done
 
 if [ -n "$1" ]; then
   TEXT="$1"
+  debug "source=argument"
 else
   osascript -e 'tell application "System Events" to keystroke "c" using command down'
   sleep 0.3
   TEXT=$(pbpaste)
+  debug "source=clipboard"
 fi
+
+debug "raw_text=$(echo "$TEXT" | head -c 200)"
 
 if [ -z "$TEXT" ]; then
   osascript -e 'display notification "No text selected or in clipboard" with title "Kokoro TTS"'
@@ -37,20 +48,23 @@ fi
 
 # Clean text for TTS (strip markdown, code blocks, URLs, etc.)
 TEXT=$(echo "$TEXT" | python3 "$SCRIPT_DIR/clean_for_tts.py")
+debug "cleaned_text=$(echo "$TEXT" | head -c 200)"
 
 # Auto-detect language unless voice is explicitly set
 if [ -n "$KOKORO_VOICE" ]; then
   VOICE="$KOKORO_VOICE"
+  debug "voice=explicit override=$VOICE"
 else
   DETECTED_LANG=$(echo "$TEXT" | python3 "$SCRIPT_DIR/detect_lang.py")
   VOICE=$([ "$DETECTED_LANG" = "pt" ] && echo "$PT_VOICE" || echo "$EN_VOICE")
+  debug "detected_lang=$DETECTED_LANG voice=$VOICE"
 fi
 
 # Kill any previous playback
 pkill -x ffplay 2>/dev/null
 pkill -x afplay 2>/dev/null
 
-ENCODED=$(echo "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+ENCODED=$(echo "$TEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read(), ensure_ascii=False))')
 
 PAYLOAD="{\"model\":\"kokoro\",\"input\":${ENCODED},\"voice\":\"${VOICE}\",\"speed\":${SPEED},\"response_format\":\"mp3\",\"stream\":true}"
 

@@ -2,22 +2,25 @@
 """Voice assistant orchestrator.
 
 Thin agent loop: user input → LLM → tool execution → response.
-Runs in terminal for P0 (typed input), voice input added in P1.
+The model starts with discover_tools + select_tools only, then
+loads additional tools as needed. Safe tools auto-execute;
+dangerous tools (run_shell) require confirmation.
 
 Usage:
     python3 assistant.py                    # Ollama backend (default)
     python3 assistant.py --backend claude   # Claude API backend
     python3 assistant.py --model qwen3:8b   # Override model
-    python3 assistant.py --no-confirm       # Skip tool confirmations
     python3 assistant.py --new              # Start fresh conversation
 
-Session logs are written to ~/.config/voice-automation/logs/
+Session logs: ~/.config/voice-automation/logs/
 """
 from __future__ import annotations
 
 import argparse
+import platform
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -25,9 +28,16 @@ SYSTEM_PROMPT_PATH = SCRIPT_DIR.parent / "config" / "assistant" / "system_prompt
 
 
 def load_system_prompt() -> str:
+    """Load and interpolate the system prompt with runtime context."""
     if SYSTEM_PROMPT_PATH.exists():
-        return SYSTEM_PROMPT_PATH.read_text().strip()
-    return "You are a helpful macOS voice assistant."
+        template = SYSTEM_PROMPT_PATH.read_text().strip()
+    else:
+        template = "You are a helpful macOS voice assistant. Today is {date}."
+
+    return template.format(
+        date=datetime.now().strftime("%A, %B %d, %Y"),
+        hostname=platform.node() or "this Mac",
+    )
 
 
 def create_backend(name: str, model: str | None = None):
@@ -44,12 +54,9 @@ def create_backend(name: str, model: str | None = None):
         sys.exit(1)
 
 
-def confirm_tool_call(description: str, auto_approve: bool) -> bool:
-    """Ask user to confirm a tool execution. Returns True if approved."""
-    if auto_approve:
-        return True
-
-    print(f"\n  → {description}")
+def confirm_tool_call(description: str) -> bool:
+    """Ask user to confirm a dangerous tool execution."""
+    print(f"\n  ⚠ {description}")
     try:
         response = input("  Execute? [y/N] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -57,9 +64,13 @@ def confirm_tool_call(description: str, auto_approve: bool) -> bool:
     return response in ("y", "yes")
 
 
-def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
+def run_agent_loop(backend, memory, logger) -> None:
     """Main agent loop: get input, call LLM, execute tools, repeat."""
-    from assistant_tools import TOOLS, execute_tool, describe_tool_call
+    from assistant_tools import (
+        ToolSession, execute_tool, describe_tool_call, requires_confirmation,
+    )
+
+    tool_session = ToolSession()
 
     print(f"\nVoice Assistant ({backend.name()})")
     print(f"Session log: {logger.path}")
@@ -88,13 +99,14 @@ def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
         logger.log_user_input(user_input)
 
         while True:
+            active_tools = tool_session.active_tools
             llm_start = logger.log_llm_request(
                 message_count=len(memory.messages),
-                tool_count=len(TOOLS),
+                tool_count=len(active_tools),
             )
 
             try:
-                response = backend.chat(memory.messages, TOOLS)
+                response = backend.chat(memory.messages, active_tools)
             except ConnectionError as e:
                 print(f"\nError: {e}\n")
                 logger.log_error(str(e), context="llm_request")
@@ -108,7 +120,6 @@ def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
             )
 
             if response["tool_calls"]:
-                # Build content blocks for memory
                 content_blocks = []
                 if response["text"]:
                     content_blocks.append({
@@ -124,24 +135,29 @@ def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
                     })
                 memory.add_assistant_tool_calls(content_blocks)
 
-                # Execute each tool call
                 for tc in response["tool_calls"]:
                     description = describe_tool_call(tc["name"], tc["arguments"])
+                    needs_confirm = requires_confirmation(tc["name"])
 
-                    # Speak tool is always auto-approved
-                    is_speak = tc["name"] == "speak"
-                    approved = is_speak or confirm_tool_call(
-                        description, auto_approve
-                    )
+                    if needs_confirm:
+                        approved = confirm_tool_call(description)
+                    else:
+                        approved = True
 
                     tool_start = time.monotonic()
                     if approved:
-                        result = execute_tool(tc["name"], tc["arguments"])
-                        if not is_speak:
+                        result = execute_tool(
+                            tc["name"], tc["arguments"], tool_session
+                        )
+                        # Show non-silent tool executions
+                        if tc["name"] not in ("speak", "discover_tools", "select_tools"):
                             print(f"  ✓ {description}")
+                        elif tc["name"] == "select_tools":
+                            print(f"  ✓ {result}")
                     else:
                         result = "User denied this action."
                         print(f"  ✗ {description} (denied)")
+
                     tool_duration = int((time.monotonic() - tool_start) * 1000)
 
                     logger.log_tool_execution(
@@ -154,11 +170,9 @@ def run_agent_loop(backend, memory, logger, auto_approve: bool) -> None:
 
                     memory.add_tool_result(tc["id"], result)
 
-                # Continue loop — LLM may want to make more tool calls
                 continue
 
             else:
-                # Text-only response (no tool calls)
                 if response["text"]:
                     print(f"\nAssistant: {response['text']}\n")
                     memory.add_assistant_text(response["text"])
@@ -179,18 +193,12 @@ def main():
         help="Override model name (e.g. qwen2.5:14b, claude-sonnet-4-20250514)",
     )
     parser.add_argument(
-        "--no-confirm",
-        action="store_true",
-        help="Skip tool execution confirmations",
-    )
-    parser.add_argument(
         "--new",
         action="store_true",
         help="Start a fresh conversation (ignore saved history)",
     )
     args = parser.parse_args()
 
-    # Add scripts dir to path for imports
     sys.path.insert(0, str(SCRIPT_DIR))
 
     from assistant_logger import SessionLogger
@@ -214,7 +222,7 @@ def main():
         model=backend._model,
     )
 
-    run_agent_loop(backend, memory, logger, auto_approve=args.no_confirm)
+    run_agent_loop(backend, memory, logger)
 
 
 if __name__ == "__main__":

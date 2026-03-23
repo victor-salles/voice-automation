@@ -12,22 +12,10 @@ Behavior:
 - When you don't know something, say so honestly and suggest what you can do instead.
 - Never apologize excessively — just act.
 
-macOS command reference (use these exact commands, do not guess):
-- Weather: curl -s "wttr.in/CITY?format=3"
-- Wi-Fi signal: /System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I
-- Brightness: osascript -e 'tell application "System Events" to tell appearance preferences to set dark mode to true'
-- Set brightness: brew install brightness && brightness 0.5
-- Volume: osascript -e 'set volume output volume 50'
-- Mute: osascript -e 'set volume output muted true'
-- Battery: pmset -g batt
-- IP address: ipconfig getifaddr en0
-- Disk space: df -h /
-- System info: sw_vers
-- Current user: whoami
-- Running apps: osascript -e 'tell application "System Events" to get name of every process whose background only is false'
-- Kill app: osascript -e 'tell application "APP_NAME" to quit'
-- Clipboard: pbpaste (read), echo "text" | pbcopy (write)
-- Screenshot: screencapture -x ~/Desktop/screenshot.png
-- Open URL: open "https://..."
-- Open file: open /path/to/file
-- Notification: osascript -e 'display notification "MSG" with title "TITLE"'
+Tool usage:
+- Prefer high-level tools (get_weather, set_volume, get_system_info, manage_app) over run_shell.
+- Use run_shell only when no specific tool exists for the task.
+- For weather, use get_weather — it auto-detects location if no city is given.
+- For system queries (Wi-Fi, battery, disk, IP, CPU, memory), use get_system_info with the right category.
+- For brightness and volume, use set_brightness and set_volume directly.
+- To open, close, or check apps, use manage_app instead of run_shell.

@@ -15,12 +15,31 @@ import subprocess
 import urllib.error
 import urllib.request
 
+from tool_executors import (
+    execute_get_weather,
+    execute_set_brightness,
+    execute_set_volume,
+    execute_get_system_info,
+    execute_manage_app,
+)
+
 CONTROL_URL = "http://localhost:18880"
 
 
 # ── Safety tiers ──
 
-SAFE_TOOLS = {"speak", "search_web", "open_app", "discover_tools", "select_tools"}
+SAFE_TOOLS = {
+    "speak",
+    "search_web",
+    "open_app",
+    "discover_tools",
+    "select_tools",
+    "get_weather",
+    "set_brightness",
+    "set_volume",
+    "get_system_info",
+    "manage_app",
+}
 ASK_TOOLS = {"run_shell"}
 
 
@@ -107,6 +126,111 @@ TOOL_CATALOG = {
                     },
                 },
                 "required": ["text"],
+            },
+        },
+    },
+    "get_weather": {
+        "summary": "Get current weather for a city or auto-detect location",
+        "definition": {
+            "name": "get_weather",
+            "description": (
+                "Get current weather conditions. Auto-detects your location from IP "
+                "if no city is specified. Returns temperature, conditions, humidity, wind."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "City name, e.g. 'London', 'São Paulo'. Use 'auto' to detect from IP.",
+                        "default": "auto",
+                    },
+                },
+            },
+        },
+    },
+    "set_brightness": {
+        "summary": "Set display brightness level",
+        "definition": {
+            "name": "set_brightness",
+            "description": "Set the display brightness. Level is a decimal from 0.0 (off) to 1.0 (max).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "number",
+                        "description": "Brightness level from 0.0 to 1.0, e.g. 0.5 for 50%",
+                    },
+                },
+                "required": ["level"],
+            },
+        },
+    },
+    "set_volume": {
+        "summary": "Set system volume or mute/unmute",
+        "definition": {
+            "name": "set_volume",
+            "description": "Set the system volume (0-100) or mute/unmute audio.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "integer",
+                        "description": "Volume level from 0 to 100",
+                    },
+                    "mute": {
+                        "type": "boolean",
+                        "description": "Set to true to mute, false to unmute",
+                        "default": False,
+                    },
+                },
+                "required": ["level"],
+            },
+        },
+    },
+    "get_system_info": {
+        "summary": "Get system info: wifi, battery, disk, ip, cpu, memory",
+        "definition": {
+            "name": "get_system_info",
+            "description": (
+                "Get system information by category. "
+                "Available categories: wifi, battery, disk, ip, system, memory, cpu."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Info category: wifi, battery, disk, ip, system, memory, or cpu",
+                        "enum": ["wifi", "battery", "disk", "ip", "system", "memory", "cpu"],
+                    },
+                },
+                "required": ["category"],
+            },
+        },
+    },
+    "manage_app": {
+        "summary": "Open, close, or check if an app is running",
+        "definition": {
+            "name": "manage_app",
+            "description": (
+                "Manage macOS applications: open, close, or check if running. "
+                "Prefer this over run_shell for app management."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "Action to perform",
+                        "enum": ["open", "close", "check"],
+                    },
+                    "app_name": {
+                        "type": "string",
+                        "description": "Application name, e.g. 'Safari', 'Terminal'",
+                    },
+                },
+                "required": ["action", "app_name"],
             },
         },
     },
@@ -258,6 +382,11 @@ EXECUTORS = {
     "search_web": lambda args: execute_search_web(args["query"]),
     "run_shell": lambda args: execute_run_shell(args["command"]),
     "speak": lambda args: execute_speak(args["text"]),
+    "get_weather": lambda args: execute_get_weather(args.get("city", "auto")),
+    "set_brightness": lambda args: execute_set_brightness(args["level"]),
+    "set_volume": lambda args: execute_set_volume(args["level"], args.get("mute", False)),
+    "get_system_info": lambda args: execute_get_system_info(args["category"]),
+    "manage_app": lambda args: execute_manage_app(args["action"], args["app_name"]),
 }
 
 
@@ -296,4 +425,16 @@ def describe_tool_call(name: str, arguments: dict) -> str:
     if name == "select_tools":
         names = arguments.get("tool_names", [])
         return f"Load tools: {', '.join(names)}"
+    if name == "get_weather":
+        return f"Get weather for {arguments.get('city', 'auto')}"
+    if name == "set_brightness":
+        return f"Set brightness to {int(arguments.get('level', 0) * 100)}%"
+    if name == "set_volume":
+        if arguments.get("mute"):
+            return "Mute audio"
+        return f"Set volume to {arguments.get('level', '?')}%"
+    if name == "get_system_info":
+        return f"Get {arguments.get('category', '?')} info"
+    if name == "manage_app":
+        return f"{arguments.get('action', '?').title()} {arguments.get('app_name', '?')}"
     return f"{name}({arguments})"

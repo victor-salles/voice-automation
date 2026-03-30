@@ -473,3 +473,35 @@ end
 
 hs.timer.doEvery(30, checkHealth)
 checkHealth()
+
+-- ── Claude Code TTS hotkeys ──
+
+-- Cmd+Shift+V: Toggle Claude TTS on/off
+hs.hotkey.bind({"cmd", "shift"}, "V", function()
+  local path = os.getenv("HOME") .. "/.claude/tts_enabled"
+  local f = io.open(path, "r")
+  if f then
+    f:close()
+    os.remove(path)
+    hs.notify.new({ title = "Claude TTS", informativeText = "🔇 Disabled" }):send()
+  else
+    local nf = io.open(path, "w")
+    if nf then nf:close() end
+    hs.notify.new({ title = "Claude TTS", informativeText = "🔊 Enabled" }):send()
+  end
+end)
+
+-- Cmd+Shift+B: Re-read last Claude response
+hs.hotkey.bind({"cmd", "shift"}, "B", function()
+  local path = os.getenv("HOME") .. "/.claude/last_tts_text.txt"
+  local f = io.open(path, "r")
+  if not f then
+    hs.notify.new({ title = "Claude TTS", informativeText = "Nothing to re-read" }):send()
+    return
+  end
+  local text = f:read("*a")
+  f:close()
+  if text and text ~= "" then
+    hs.http.asyncPost("http://localhost:18880/speak", text, {}, function() end)
+  end
+end)

@@ -10,6 +10,47 @@ Output: Hello world.
 import re
 import sys
 
+# ── Acronym dictionaries ──
+
+# Spelled out letter-by-letter
+SPELLED_ACRONYMS = {
+    "HTTPS": "H T T P S", "HTML": "H T M L", "HTTP": "H T T P",
+    "STDOUT": "standard out", "STDERR": "standard error",
+    "STDIN": "standard in",
+    "API": "A P I", "URL": "U R L", "CSS": "C S S", "XML": "X M L",
+    "SSH": "S S H", "TLS": "T L S", "SSL": "S S L", "TCP": "T C P",
+    "UDP": "U D P", "DNS": "D N S", "CLI": "C L I", "SDK": "S D K",
+    "IDE": "I D E", "JWT": "J W T", "AWS": "A W S", "GCP": "G C P",
+    "LLM": "L L M", "TTS": "T T S", "STT": "S T T", "OCR": "O C R",
+    "NLP": "N L P", "CPU": "C P U", "GPU": "G P U", "SSD": "S S D",
+    "USB": "U S B", "PDF": "P D F", "PNG": "P N G", "CSV": "C S V",
+    "EOF": "E O F",
+    "AI": "A I", "OS": "O S", "UI": "U I", "UX": "U X",
+    "PR": "P R", "CI": "C I", "CD": "C D", "VM": "V M", "IP": "I P",
+}
+
+# Pronounced as words
+PRONOUNCED_ACRONYMS = {
+    "JSON": "Jason", "SQL": "sequel", "GUI": "gooey",
+    "YAML": "YAML", "RAM": "ram", "REST": "rest", "CRUD": "crud",
+    "FIFO": "fifo", "LIFO": "lifo", "MIME": "mime", "REGEX": "regex",
+    "NULL": "null", "BOOL": "boolean", "INT": "int", "ENV": "env",
+}
+
+# Combined and sorted by length (longest first) to avoid partial matches
+_ALL_ACRONYMS = {**SPELLED_ACRONYMS, **PRONOUNCED_ACRONYMS}
+_ACRONYM_PATTERNS = [
+    (re.compile(r'\b' + re.escape(k) + r'\b', re.IGNORECASE), v)
+    for k, v in sorted(_ALL_ACRONYMS.items(), key=lambda x: -len(x[0]))
+]
+
+# Software names that precede version numbers
+_VERSION_SOFTWARE = (
+    "Python", "Node", "Ruby", "Java", "Go", "Rust", "Swift", "PHP",
+    "macOS", "iOS", "Android", "Chrome", "Firefox", "Safari",
+    "Docker", "Kubernetes",
+)
+
 
 def strip_code_blocks(text: str) -> str:
     return re.sub(r'```[\s\S]*?```', " code block omitted. ", text)
@@ -69,14 +110,88 @@ def strip_special(text: str) -> str:
     text = re.sub(r'\s*[—–]\s*', ', ', text)
     # Forward slashes → comma for pause
     text = re.sub(r'/', ', ', text)
+    # Currency before numbers: $50 → 50 dollars
+    text = re.sub(r'\$(\d+(?:\.\d+)?)', r'\1 dollars', text)
+    text = re.sub(r'€(\d+(?:\.\d+)?)', r'\1 euros', text)
+    text = re.sub(r'£(\d+(?:\.\d+)?)', r'\1 pounds', text)
+    # Percentage after numbers: 50% → 50 percent
+    text = re.sub(r'(\d)%', r'\1 percent', text)
+    # Hashtag: #42 → number 42, #python → hashtag python
+    text = re.sub(r'#(\d+)', r'number \1', text)
+    text = re.sub(r'#([a-zA-Z]\w*)', r'hashtag \1', text)
+    text = re.sub(r'#', '', text)
+    # Ampersand
+    text = re.sub(r'&', ' and ', text)
+    # @ sign (not in emails)
+    text = re.sub(r'(\w)@(\w+\.\w+)', r'\1 at \2', text)
+    text = re.sub(r'@', ' at ', text)
+    # C++ style: plus plus
+    text = re.sub(r'(\w)\+\+', r'\1 plus plus', text)
+    # Equals between words: a = b
+    text = re.sub(r'(\w)\s*=\s*(\w)', r'\1 equals \2', text)
+    # Tilde before number: ~100 → approximately 100
+    text = re.sub(r'~(\d)', r'approximately \1', text)
+    # Horizontal rules must be removed before the general = cleanup
+    text = re.sub(r'[-=]{3,}', '', text)
+    # Clean remaining symbols
+    text = re.sub(r'[~+=]', ' ', text)
+    text = re.sub(r'\$', '', text)
+    text = re.sub(r'[€£%]', '', text)
     # Pipes, blockquotes
     text = re.sub(r'[|>]', ' ', text)
-    text = re.sub(r'[-=]{3,}', '', text)
     # Braces and brackets
     text = re.sub(r'\{[^}]*\}', '', text)
     text = re.sub(r'\[([^\]]*)\]', r'\1', text)
     # Emojis (Unicode blocks for symbols/emoticons/etc.)
     text = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA6F]', '', text)
+    return text
+
+
+def expand_parentheticals(text: str) -> str:
+    """Convert parenthetical expressions to comma-delimited phrases."""
+    text = re.sub(r'\(e\.g\.,?\s*([^)]*)\)', r', for example \1,', text)
+    text = re.sub(r'\(i\.e\.,?\s*([^)]*)\)', r', that is \1,', text)
+    text = re.sub(r'\(etc\.?\)', ', etcetera,', text)
+    text = re.sub(r'\(\s*\)', '', text)  # empty parens
+    text = re.sub(r'\(([^)]+)\)', r', \1,', text)
+    return text
+
+
+def expand_abbreviations(text: str) -> str:
+    """Replace standalone acronyms with TTS-friendly forms."""
+    for pattern, replacement in _ACRONYM_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def expand_versions(text: str) -> str:
+    """Convert version numbers to spoken form.
+
+    v3.12 → version 3 point 12
+    3.12.1 → 3 point 12 point 1
+    Python 3.9 → Python 3 point 9
+
+    Does NOT affect plain decimals like 3.14 or 0.5.
+    """
+    # v-prefixed: v3.12 → version 3 point 12
+    text = re.sub(
+        r'\bv(\d+(?:\.\d+)+)\b',
+        lambda m: "version " + m.group(1).replace(".", " point "),
+        text,
+    )
+    # Three-part+ versions: 3.12.1 → 3 point 12 point 1
+    text = re.sub(
+        r'\b(\d+\.\d+\.\d+(?:\.\d+)*)\b',
+        lambda m: m.group(1).replace(".", " point "),
+        text,
+    )
+    # Software-prefixed two-part versions: Python 3.9 → Python 3 point 9
+    sw_pattern = "|".join(re.escape(s) for s in _VERSION_SOFTWARE)
+    text = re.sub(
+        r'(' + sw_pattern + r')\s+(\d+\.\d+)\b',
+        lambda m: m.group(1) + " " + m.group(2).replace(".", " point "),
+        text,
+    )
     return text
 
 

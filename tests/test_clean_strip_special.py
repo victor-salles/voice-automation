@@ -134,3 +134,69 @@ def test_strip_special_converts_and_or_slash():
 def test_strip_special_preserves_portuguese_with_slashes():
     result = strip_special("opção/escolha")
     assert result == "opção, escolha"
+
+
+def test_strip_special_converts_dollar_to_dollars():
+    result = strip_special("costs $50")
+    assert "50 dollars" in result
+    assert "$" not in result
+
+
+def test_strip_special_converts_dollar_with_cents():
+    result = strip_special("priced at $9.99")
+    assert "9.99 dollars" in result
+
+
+def test_strip_special_converts_euro_to_euros():
+    result = strip_special("costs €20")
+    assert "20 euros" in result
+
+
+def test_strip_special_converts_pound_to_pounds():
+    result = strip_special("costs £15")
+    assert "15 pounds" in result
+
+
+def test_strip_special_converts_percent_to_percent_word():
+    result = strip_special("50% done")
+    assert "50 percent" in result
+    assert "%" not in result
+
+
+def test_strip_special_converts_hash_number_to_number_word():
+    result = strip_special("issue #42")
+    assert "number 42" in result
+    assert "#" not in result
+
+
+def test_strip_special_converts_hash_word_to_hashtag():
+    result = strip_special("#python is great")
+    assert "hashtag python" in result
+    assert "#" not in result
+
+
+def test_strip_special_converts_ampersand_to_and():
+    result = strip_special("cats & dogs")
+    assert " and " in result
+    assert "&" not in result
+
+
+def test_strip_special_converts_email_at_sign():
+    result = strip_special("user@example.com")
+    assert "user at example.com" in result
+
+
+def test_strip_special_converts_cpp_plusplus():
+    result = strip_special("written in C++")
+    assert "plus plus" in result
+
+
+def test_strip_special_converts_equals_between_words():
+    result = strip_special("a = b")
+    assert "a equals b" in result
+
+
+def test_strip_special_converts_tilde_before_number():
+    result = strip_special("~100 items")
+    assert "approximately 100" in result
+    assert "~" not in result

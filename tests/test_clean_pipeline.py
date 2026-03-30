@@ -69,7 +69,10 @@ def test_clean_handles_multiple_paragraphs():
 
 def test_clean_strips_inline_code_with_special_chars():
     result = clean("`@var#name` text")
-    assert result == "@var#name text"
+    # @ and # are converted by strip_special for TTS readability
+    assert "@" not in result
+    assert "#" not in result
+    assert "text" in result
 
 
 def test_clean_removes_emojis():

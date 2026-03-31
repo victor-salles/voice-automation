@@ -3,7 +3,7 @@
 *.err
 
 # Claude Code
-.claude/settings.local.json
+.claude/
 CLAUDE.local.md
 
 # Swift / SPM

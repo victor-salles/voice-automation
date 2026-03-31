@@ -71,6 +71,11 @@ final class AppModel {
         tts.speakSegments(segments)
     }
 
+    var speed: Float {
+        get { tts.speed }
+        set { tts.speed = newValue }
+    }
+
     func stop() {
         tts.stop()
     }
@@ -100,6 +105,23 @@ struct VoiceFlowApp: App {
                 model.stop()
             }
             .disabled(!model.status.canStop)
+
+            Divider()
+
+            Menu("Speed") {
+                ForEach([0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { preset in
+                    Button {
+                        model.speed = preset
+                    } label: {
+                        let label = preset == 1.0 ? "1×  (normal)" : "\(String(format: "%g", preset))×"
+                        if model.speed == preset {
+                            Label(label, systemImage: "checkmark")
+                        } else {
+                            Text(label)
+                        }
+                    }
+                }
+            }
 
             Divider()
 

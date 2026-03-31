@@ -13,6 +13,10 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
     private let port: String
     private let voice: String
 
+    /// Playback speed multiplier. Applied to every segment via AVAudioPlayer.rate.
+    /// Range 0.5–2.0; 1.0 is normal speed.
+    var speed: Float = 1.0
+
     // Queue state
     private var segments: [String] = []
     private var currentIndex = 0
@@ -166,6 +170,8 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
         do {
             player = try AVAudioPlayer(data: data)
             player?.delegate = self
+            player?.enableRate = true
+            player?.rate = speed
             player?.play()
             status.setPlaying()
         } catch {

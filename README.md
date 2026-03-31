@@ -2,6 +2,10 @@
 
 A native macOS menu bar app that reads selected text aloud using a local Kokoro TTS server. Select text anywhere, press `⌥S`, and hear it spoken — no internet required.
 
+| Menu | Speed |
+|------|-------|
+| ![VoiceFlow menu](docs/screenshots/menu-open.png) | ![Speed submenu](docs/screenshots/speed-submenu.png) |
+
 ## Features
 
 - **Global hotkey** — `⌥S` speaks the selected text, or stops playback if already speaking

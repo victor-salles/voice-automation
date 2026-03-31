@@ -1,7 +1,17 @@
 .DS_Store
-*.wav
 *.log
 *.err
+
+# Claude Code
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Swift / SPM
+VoiceFlow/.build/
+VoiceFlow/*.app/
+VoiceFlow/.swiftpm/
+
+# Misc
+.history/
+.pytest_cache/
 __pycache__/

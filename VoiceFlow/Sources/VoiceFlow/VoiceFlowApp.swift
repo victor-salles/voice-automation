@@ -109,7 +109,7 @@ struct VoiceFlowApp: App {
             Divider()
 
             Menu("Speed") {
-                ForEach([0.75, 1.0, 1.25, 1.5, 2.0] as [Float], id: \.self) { preset in
+                ForEach([0.75, 1.0, 1.15, 1.25, 1.5, 2.0] as [Float], id: \.self) { preset in
                     Button {
                         model.speed = preset
                     } label: {

@@ -19,6 +19,9 @@ VoiceFlow/.build/
 VoiceFlow/*.app/
 VoiceFlow/.swiftpm/
 
+# Local agent / review scratch (not part of the product tree)
+builds/
+
 # Misc
 .history/
 .pytest_cache/

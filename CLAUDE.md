@@ -30,7 +30,7 @@ Requires Xcode Command Line Tools (`xcode-select --install`).
 
 ## Signing
 
-The app is signed with a local self-signed certificate named **"VoiceFlow Dev"** (created in Keychain Access).
+The app is signed with a local self-signed certificate created in Keychain Access.
 This keeps the code-signing identity stable across rebuilds so Accessibility permission is not revoked.
 First install only: System Settings → Privacy & Security → Accessibility → add VoiceFlow.
 

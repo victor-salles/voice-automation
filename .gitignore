@@ -6,6 +6,14 @@
 .claude/
 CLAUDE.local.md
 
+# Certificates and secrets
+*.p12
+*.pem
+*.cer
+*.key
+.env
+.env.*
+
 # Swift / SPM
 VoiceFlow/.build/
 VoiceFlow/*.app/

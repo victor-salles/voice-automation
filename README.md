@@ -33,8 +33,11 @@ cp config/launchd/start.sh ~/.kokoro-fastapi/start.sh
 chmod +x ~/.kokoro-fastapi/start.sh
 
 # Install and load the LaunchAgent (auto-starts on login)
-sed "s|__HOME__|$HOME|g" config/launchd/com.local.kokoro.plist \
-  > ~/Library/LaunchAgents/com.local.kokoro.plist
+python3 -c "
+import sys, pathlib
+p = pathlib.Path('config/launchd/com.local.kokoro.plist').read_text()
+sys.stdout.write(p.replace('__HOME__', str(pathlib.Path.home())))
+" > ~/Library/LaunchAgents/com.local.kokoro.plist
 launchctl load ~/Library/LaunchAgents/com.local.kokoro.plist
 
 # Verify it's running

@@ -10,7 +10,7 @@ export PYTHONPATH="$KOKORO_DIR:$KOKORO_DIR/api"
 export MODEL_DIR="src/models"
 export VOICES_DIR="src/voices/v1_0"
 export WEB_PLAYER_PATH="$KOKORO_DIR/web"
-export ESPEAK_DATA_PATH="$(brew --prefix espeak-ng)/lib/espeak-ng-data"
+export ESPEAK_DATA_PATH="/opt/homebrew/opt/espeak-ng/lib/espeak-ng-data"
 
 cd "$KOKORO_DIR"
 

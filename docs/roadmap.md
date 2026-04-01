@@ -6,6 +6,7 @@ Ordered backlog and research notes. MVP product direction lives in [specs/2026-0
 
 - **Web “read the article” via Accessibility** — Deferred; see [Research: web content selection](#research-web-content-selection-accessibility) below. No further heuristic tuning until there is a clear scope (landmark scoping vs browser extension / DOM).
 - **⌥S while paused** — If playback is paused, ⌥S in another app can resume old audio instead of speaking the new context. Track in review notes; fix when revisiting hotkey / state machine behavior.
+- **Duplex / conversational voice** — ASR + turn-taking + barge-in; see [research-asr-duplex.md](research-asr-duplex.md) for model families (Whisper, faster-whisper, NeMo/Parakeet, Apple Speech, WhisperKit) and an incremental adoption path.
 
 ## Research: web content selection (Accessibility)
 

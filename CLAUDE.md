@@ -17,34 +17,23 @@ Follow SOLID principles and ship the simple version first — iterate only when 
 - **StatusManager.swift** — `@Observable` status state machine (idle / processing / playing / error)
 - **TTSEngine.swift** — Kokoro HTTP client + `AVAudioPlayer` queue; pre-synthesizes segment N+1 while playing N
 - **LanguageInference.swift** — `NLLanguageRecognizer` → American English vs Brazilian Portuguese Kokoro voice
-- **TextProcessor.swift** — text segmentation and cleaning pipeline (markdown, code, symbols)
-- **TextExtractor.swift** — reads selected text from the focused app via the Accessibility API
+- **TextProcessor.swift** — cleaning, segmentation, heuristics when AX returns glued paragraphs
+- **TextExtractor.swift** — selected text and focused text area via Accessibility API
+- **VoiceFlowLogging.swift** / **SpeechPipelineDiagnostics.swift** — optional speech pipeline file log (see README)
 
 ## Building
 
 ```bash
 cd VoiceFlow
-make install        # build release, bundle .app, sign, copy to ~/Applications/
+make install
 ```
 
 Requires Xcode Command Line Tools (`xcode-select --install`).
 
-## Signing
+## Operator-facing docs
 
-The app is signed with a local self-signed certificate created in Keychain Access.
-This keeps the code-signing identity stable across rebuilds so Accessibility permission is not revoked.
-First install only: System Settings → Privacy & Security → Accessibility → add VoiceFlow.
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `KOKORO_HOST` | `localhost` | Kokoro server host |
-| `KOKORO_PORT` | `8880` | Kokoro server port |
-| `KOKORO_EN_VOICE` | `af_heart` | American English Kokoro voice ID |
-| `KOKORO_PT_BR_VOICE` | `pf_dora` | Brazilian Portuguese Kokoro voice ID |
+**Single source:** [README.md](README.md) — setup, Accessibility, env vars, Kokoro, debugging, Makefile targets.
 
 ## Kokoro Server
 
-VoiceFlow synthesizes speech by calling a local Kokoro-FastAPI server.
-See `config/launchd/` for a LaunchAgent that auto-starts it on login.
+Local FastAPI wrapper; see `config/launchd/` for LaunchAgent.

@@ -26,14 +26,10 @@ A native macOS menu bar app that reads selected text aloud using a local Kokoro 
 
 ### 1. Start Kokoro
 
-VoiceFlow synthesizes speech by calling a local Kokoro-FastAPI server. The easiest way to keep it running is via the included LaunchAgent:
-
 ```bash
-# Install the startup script
 cp config/launchd/start.sh ~/.kokoro-fastapi/start.sh
 chmod +x ~/.kokoro-fastapi/start.sh
 
-# Install and load the LaunchAgent (auto-starts on login)
 python3 -c "
 import sys, pathlib
 p = pathlib.Path('config/launchd/com.local.kokoro.plist').read_text()
@@ -41,30 +37,29 @@ sys.stdout.write(p.replace('__HOME__', str(pathlib.Path.home())))
 " > ~/Library/LaunchAgents/com.local.kokoro.plist
 launchctl load ~/Library/LaunchAgents/com.local.kokoro.plist
 
-# Verify it's running
 curl http://localhost:8880/v1/audio/voices
 ```
 
-### 2. Install VoiceFlow
+### 2. Build and install VoiceFlow
 
-```bash
-cd VoiceFlow
-make install
-```
+From the `VoiceFlow/` directory:
 
-This builds a release binary, bundles it into `VoiceFlow.app`, signs it, and copies it to `~/Applications/`.
+| Command | What it does |
+|---------|----------------|
+| `make install` | Release build, bundle `.app`, sign, copy to `~/Applications/` (default) |
+| `make build` | Debug build only |
+| `make bundle` | Build + create `VoiceFlow.app` in repo |
+| `make clean` | Remove build artifacts and bundle |
 
 ### 3. Grant Accessibility
 
-Open **System Settings → Privacy & Security → Accessibility** and add VoiceFlow. This is required once — the self-signed certificate keeps the identity stable across rebuilds.
+**System Settings → Privacy & Security → Accessibility** — add VoiceFlow once. The dev signing identity stays stable across rebuilds so permission is not revoked.
 
 ### 4. Launch
 
 ```bash
 open ~/Applications/VoiceFlow.app
 ```
-
-The speaker icon appears in the menu bar. Select text anywhere and press `⌥S`.
 
 ## Usage
 
@@ -77,21 +72,28 @@ The speaker icon appears in the menu bar. Select text anywhere and press `⌥S`.
 
 ## Configuration
 
+Environment variables (shell profile, or `EnvironmentVariables` in a launchd plist):
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `KOKORO_HOST` | `localhost` | Kokoro server host |
 | `KOKORO_PORT` | `8880` | Kokoro server port |
-| `KOKORO_EN_VOICE` | `af_heart` | American English voice ID (Kokoro `af_*` / `am_*`) |
-| `KOKORO_PT_BR_VOICE` | `pf_dora` | Brazilian Portuguese voice ID (Kokoro `pf_*` / `pm_*`) |
+| `KOKORO_EN_VOICE` | `af_heart` | American English voice (`af_*` / `am_*`) |
+| `KOKORO_PT_BR_VOICE` | `pf_dora` | Brazilian Portuguese voice (`pf_*` / `pm_*`) |
+| `VOICEFLOW_DEBUG_LOG` | off in release | `1` / `true` / `yes` enables file logging for release builds |
+| `VOICEFLOW_DEBUG_LOG_FILE` | `/tmp/voiceflow-debug.log` | Absolute path override (also enables release logging if set) |
 
-Set these in your shell profile or in a launchd plist `EnvironmentVariables` block.
+### Debug log (segmentation / selection issues)
 
-## Building from Source
+- **Debug** Swift builds always append to the log file.
+- **Release** (`make install`): GUI `open` usually does not inherit shell env — run with logging, e.g.  
+  `VOICEFLOW_DEBUG_LOG=1 ~/Applications/VoiceFlow.app/Contents/MacOS/VoiceFlow`  
+  or `launchctl setenv VOICEFLOW_DEBUG_LOG 1` then launch from Finder.
 
-```bash
-cd VoiceFlow
-make build     # debug build only
-make bundle    # build + create .app bundle
-make install   # build + bundle + sign + copy to ~/Applications/
-make clean     # remove build artifacts
-```
+Each ⌥S on a selection writes a `speech pipeline` block: newline counts in the **raw** `kAXSelectedText` string, whether **selection recovery** ran (many UIs return text with **no** `\n` between paragraphs), `preprocessedVisibleExcerpt`, block vs segment counts, and segment previews. **Logs may contain full selections** — redact before sharing.
+
+### Kokoro API and text shaping
+
+[Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) documents `input`, `voice`, optional `speed` / `normalization_options` — not general SSML. The server also chunks long input internally. VoiceFlow adds client-side segmentation (~320 characters, sentence-aware) and treats markdown line breaks as separate blocks when the next line looks like a new line of thought (see `TextProcessor`).
+
+**Glued selections:** if the focused app returns one line with no newlines (common in chat / web views), VoiceFlow applies light heuristics: space after `lowercase.` + `Uppercase`, `word` + `1.` list markers, breaks before `•` bullets, em/en dashes as paragraph boundaries. This cannot recover perfect structure for every source.

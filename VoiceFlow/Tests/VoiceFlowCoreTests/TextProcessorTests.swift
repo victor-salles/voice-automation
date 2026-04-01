@@ -117,19 +117,19 @@ struct CleanTests {
         #expect(TextProcessor.clean(input) == expected)
     }
 
-    @Test("em dash with spaces becomes comma-space")
+    @Test("em dash with spaces becomes sentence break for TTS pause")
     func emDashWithSpaces() {
-        #expect(TextProcessor.clean("foo — bar") == "foo, bar")
+        #expect(TextProcessor.clean("foo — bar") == "foo. bar")
     }
 
-    @Test("em dash without spaces becomes comma-space")
+    @Test("em dash without spaces becomes sentence break")
     func emDashNoSpaces() {
-        #expect(TextProcessor.clean("foo—bar") == "foo, bar")
+        #expect(TextProcessor.clean("foo—bar") == "foo. bar")
     }
 
-    @Test("en dash becomes comma-space")
+    @Test("en dash becomes sentence break")
     func enDash() {
-        #expect(TextProcessor.clean("foo–bar") == "foo, bar")
+        #expect(TextProcessor.clean("foo–bar") == "foo. bar")
     }
 
     @Test("dollar amount expanded")
@@ -292,25 +292,43 @@ struct SegmentTests {
         #expect(!startsWithOrderedMarker)
     }
 
-    @Test("block longer than 500 chars is split at sentence boundaries")
+    @Test("block longer than segment limit is split at sentence boundaries")
     func longBlockSplitsAtSentences() {
         let sentence = "This sentence contains enough words to contribute meaningfully to the total character count."
         let longText = (1...7).map { "Sentence \($0): \(sentence)" }.joined(separator: " ")
-        #expect(longText.count > 500)
+        #expect(longText.count > 400)
 
         let segments = TextProcessor.segment(longText)
         #expect(segments.count > 1)
+        // Packing target is ~320 chars; merges of trailing shorts may add a little slack.
         for segment in segments {
-            #expect(segment.count <= 500)
+            #expect(segment.count <= 400)
         }
     }
 
-    @Test("segment shorter than 20 chars merges with the following segment")
+    @Test("Portuguese text splits on sentence boundaries")
+    func portugueseSentenceBoundaries() {
+        let longText = """
+            Primeiro parágrafo com conteúdo suficiente para testar o fluxo. \
+            Segundo parágrafo continua com mais frases e pontuação. \
+            Terceiro trecho encerra com pergunta: tudo certo?
+            """
+        let segments = TextProcessor.segment(longText)
+        #expect(segments.count >= 1)
+        for segment in segments {
+            #expect(segment.count <= 400)
+        }
+        let joined = segments.joined()
+        #expect(joined.contains("Primeiro"))
+        #expect(joined.contains("pergunta"))
+    }
+
+    @Test("very short fragment merges with the following segment")
     func shortSegmentMergesWithNext() {
-        let text = "Short.\n\nThis is a long enough following paragraph to pass the threshold."
+        let text = "OK.\n\nThis is a long enough following paragraph to pass the threshold."
         let segments = TextProcessor.segment(text)
         #expect(segments.count == 1)
-        #expect(segments[0].contains("Short"))
+        #expect(segments[0].contains("OK"))
         #expect(segments[0].contains("following paragraph"))
     }
 
@@ -329,5 +347,49 @@ struct SegmentTests {
         let segments = TextProcessor.segment(text)
         #expect(segments.count == 1)
         #expect(segments[0].contains("real content"))
+    }
+
+    @Test("markdown lines starting a new line get separate segments when next line starts uppercase")
+    func markdownLineBreaksPauseBetweenLines() {
+        let text = "First line thought.\nSecond line new thought.\nThird line here."
+        let segments = TextProcessor.segment(text)
+        #expect(segments.count == 3)
+        #expect(segments[0].contains("First line"))
+        #expect(segments[1].contains("Second line"))
+        #expect(segments[2].contains("Third line"))
+    }
+
+    @Test("hard-wrapped paragraph stays one segment when continuation starts lowercase")
+    func hardWrappedParagraphSingleSegment() {
+        let text = """
+            This is a long paragraph that was wrapped by the editor
+            without a blank line, so the next line starts lowercase.
+            """
+        let segments = TextProcessor.segment(text)
+        #expect(segments.count == 1)
+        #expect(segments[0].contains("wrapped"))
+        #expect(segments[0].contains("lowercase"))
+    }
+
+    @Test("em dash splits into two segments for extended pause between clauses")
+    func emDashParagraphSplitInSegment() {
+        let segments = TextProcessor.segment("Before the pause — after the pause.")
+        #expect(segments.count == 2)
+        #expect(segments[0].contains("Before"))
+        #expect(segments[1].contains("after"))
+    }
+
+    @Test("selection with stripped newlines: reinject space before glued sentence and list")
+    func recoveredSpacingFromGluedParagraphsLikeAXSelection() {
+        let glued = """
+            Here is what was added and how to use it.Logging behavior1. VoiceFlowLogging.swift — Central switch and file append.• Debug (swift test, debug runs): logging is always on.
+            """
+        let segments = TextProcessor.segment(glued)
+        #expect(segments.count > 1)
+        let joined = segments.joined(separator: " ")
+        #expect(joined.contains("it. Logging") || joined.contains("use it. Logging"))
+        #expect(joined.contains("behavior 1."))
+        #expect(!joined.contains("it.Logging"))
+        #expect(!joined.contains("behavior1."))
     }
 }

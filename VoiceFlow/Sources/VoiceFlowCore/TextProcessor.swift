@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 /// Pure text processing: clean markup, segment into speakable chunks.
 /// No I/O, no side effects — fully testable.
@@ -6,98 +7,214 @@ package enum TextProcessor {
 
     // MARK: - Segmentation
 
+    /// Target upper size for one synthesis segment (Swift `Character` count).
+    /// Roughly aligned with Kokoro-FastAPI server chunking (~175–250 tokens); shorter chunks
+    /// tend to sound less rushed and give natural pauses between queue items.
+    private static let maxSegmentCharacterCount = 320
+
     /// Split text into speakable segments: paragraphs, list items, sentences.
     /// Each segment is cleaned and ready for TTS.
     package static func segment(_ text: String) -> [String] {
-        // First, separate structural blocks (paragraphs, list items)
-        let blocks = splitIntoBlocks(text)
+        let blocks = splitIntoBlocks(preprocessForSegmentation(text))
 
-        // Clean each block, split long ones at sentence boundaries
+        // Clean each block, split long ones at linguistic sentence boundaries
         var segments: [String] = []
         for block in blocks {
             let cleaned = clean(block)
             guard !cleaned.isEmpty else { continue }
 
-            if cleaned.count > 500 {
-                segments.append(contentsOf: splitAtSentences(cleaned))
+            if cleaned.count > maxSegmentCharacterCount {
+                segments.append(contentsOf: packSentencesIntoChunks(cleaned, maxCharacters: maxSegmentCharacterCount))
             } else {
                 segments.append(cleaned)
             }
         }
 
-        // Merge very short segments with the next one
-        return mergeShortSegments(segments, minLength: 20)
+        // Merge only very short fragments (< 12 chars) into the following segment so typical
+        // markdown lines (~15–40 chars) keep clause boundaries and queue pauses.
+        return mergeShortSegments(segments, minLength: 12)
     }
 
-    /// Split text into structural blocks: paragraphs and individual list items.
+    /// Recovery pass + em dash expansion, in the same order as `segment(_:)`.
+    package static func preprocessForSegmentation(_ text: String) -> String {
+        preprocessEmDashesForParagraphBreaks(recoverSpacingWhenSourceStripsNewlines(text))
+    }
+
+    /// Same dash → newline preprocessing as `segment(_:)` (for diagnostics only).
+    package static func preprocessEmDashesForParagraphBreaks(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"\s*[—–]\s*"#,
+            with: "\n\n",
+            options: .regularExpression
+        )
+    }
+
+    /// Many apps return `kAXSelectedText` with **no newlines** between paragraphs (e.g. chat / web views).
+    /// Insert missing spaces so words are not glued (`it.Logging` → `it. Logging`) and list markers breathe (`behavior1.` → `behavior 1.`).
+    package static func recoverSpacingWhenSourceStripsNewlines(_ text: String) -> String {
+        var t = text
+        t = replaceRegex(t, pattern: #"(\p{Ll})\.(\p{Lu})"#, template: "$1. $2")
+        t = replaceRegex(t, pattern: #"([!?…])(\p{Lu})"#, template: "$1 $2")
+        t = replaceRegex(t, pattern: #"(\p{Ll}{4,})([1-9]\d?\.)"#, template: "$1 $2")
+        t = replaceRegex(t, pattern: #"([^\s•])•"#, template: "$1 •")
+        t = replaceRegex(t, pattern: #"\s•\s"#, template: "\n• ")
+        return t
+    }
+
+    private static func replaceRegex(_ string: String, pattern: String, template: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return string }
+        let range = NSRange(location: 0, length: (string as NSString).length)
+        return regex.stringByReplacingMatches(in: string, options: [], range: range, withTemplate: template)
+    }
+
+    /// Block list after full `preprocessForSegmentation` and `splitIntoBlocks` — **before** `clean` (for logging).
+    package static func debugBlocksFromPreprocessed(_ preprocessedText: String) -> [String] {
+        splitIntoBlocks(preprocessedText)
+    }
+
+    /// Split text into structural blocks: blank-line paragraphs, list items, and logical lines in markdown.
+    ///
+    /// Single newlines become **new blocks** unless the next line looks like a hard-wrapped continuation
+    /// (previous line does not end a sentence; next line starts with a lowercase letter). That keeps
+    /// editor-wrapped prose as one block while giving pauses between markdown lines that start a new thought.
     private static func splitIntoBlocks(_ text: String) -> [String] {
         var blocks: [String] = []
-        var currentBlock: [String] = []
+        var pending: String?
+
+        func flushPending() {
+            if let p = pending {
+                blocks.append(p)
+                pending = nil
+            }
+        }
 
         for line in text.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-            // Empty line → flush current block, start new paragraph
             if trimmed.isEmpty {
-                if !currentBlock.isEmpty {
-                    blocks.append(currentBlock.joined(separator: "\n"))
-                    currentBlock = []
-                }
+                flushPending()
                 continue
             }
 
-            // List item → flush current block, add item as its own block
             if isListItem(trimmed) {
-                if !currentBlock.isEmpty {
-                    blocks.append(currentBlock.joined(separator: "\n"))
-                    currentBlock = []
-                }
+                flushPending()
                 blocks.append(trimmed)
                 continue
             }
 
-            // Regular line → accumulate into current block
-            currentBlock.append(trimmed)
+            if let current = pending {
+                if shouldMergeHardWrappedLine(previousLineContent: current, nextLine: trimmed) {
+                    pending = current + " " + trimmed
+                } else {
+                    blocks.append(current)
+                    pending = trimmed
+                }
+            } else {
+                pending = trimmed
+            }
         }
-
-        if !currentBlock.isEmpty {
-            blocks.append(currentBlock.joined(separator: "\n"))
-        }
-
+        flushPending()
         return blocks
+    }
+
+    /// `true` when `nextLine` is likely the same paragraph continued from a column wrap (not a new markdown line).
+    private static func shouldMergeHardWrappedLine(previousLineContent: String, nextLine: String) -> Bool {
+        !endsWithSentenceBreak(previousLineContent) && startsWithLowercaseLetter(nextLine)
+    }
+
+    private static func endsWithSentenceBreak(_ line: String) -> Bool {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard let last = t.last else { return false }
+        return ".?!…".contains(last)
+    }
+
+    private static func startsWithLowercaseLetter(_ line: String) -> Bool {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard let first = t.first else { return false }
+        return first.isLetter && first.isLowercase
     }
 
     private static func isListItem(_ line: String) -> Bool {
         // Unordered: - item, * item, + item
         if line.range(of: #"^[-*+]\s+"#, options: .regularExpression) != nil { return true }
+        // Bullet (common when newlines are stripped from rich text)
+        if line.range(of: #"^•\s+"#, options: .regularExpression) != nil { return true }
         // Ordered: 1. item, 2. item
         if line.range(of: #"^\d+\.\s+"#, options: .regularExpression) != nil { return true }
         return false
     }
 
-    /// Split long text at sentence boundaries, each chunk <= 500 chars.
-    private static func splitAtSentences(_ text: String) -> [String] {
-        let sentences = text.components(separatedBy: ". ")
+    /// Sentence fragments in document order (English, Portuguese, etc.).
+    private static func linguisticSentences(in text: String) -> [String] {
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = text
+        var sentences: [String] = []
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+            let piece = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !piece.isEmpty { sentences.append(piece) }
+            return true
+        }
+        if sentences.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [text.trimmingCharacters(in: .whitespacesAndNewlines)]
+        }
+        return sentences
+    }
+
+    /// Pack sentences into chunks at or below `maxCharacters`, splitting oversized sentences at spaces.
+    private static func packSentencesIntoChunks(_ text: String, maxCharacters: Int) -> [String] {
         var chunks: [String] = []
         var buffer = ""
 
-        for part in sentences {
-            let sentence = part.hasSuffix(".") ? part : part + "."
-            if !buffer.isEmpty && buffer.count + sentence.count + 1 > 500 {
-                chunks.append(buffer.trimmingCharacters(in: .whitespaces))
-                buffer = sentence
-            } else {
-                buffer = buffer.isEmpty ? sentence : "\(buffer) \(sentence)"
-            }
-        }
-        if !buffer.isEmpty {
-            chunks.append(buffer.trimmingCharacters(in: .whitespaces))
+        func flushBuffer() {
+            let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { chunks.append(trimmed) }
+            buffer = ""
         }
 
+        for sentence in linguisticSentences(in: text) {
+            for fragment in splitOversizedClause(sentence, maxCharacters: maxCharacters) {
+                if buffer.isEmpty {
+                    buffer = fragment
+                    continue
+                }
+                if buffer.count + 1 + fragment.count <= maxCharacters {
+                    buffer += " " + fragment
+                } else {
+                    flushBuffer()
+                    buffer = fragment
+                }
+            }
+        }
+        flushBuffer()
         return chunks
     }
 
-    /// Merge segments shorter than minLength with the following segment.
+    /// When a single sentence exceeds the limit, break at spaces (words stay intact when possible).
+    private static func splitOversizedClause(_ text: String, maxCharacters: Int) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxCharacters else { return [trimmed] }
+
+        var parts: [String] = []
+        var remainder = trimmed[...]
+        while !remainder.isEmpty {
+            if remainder.count <= maxCharacters {
+                parts.append(String(remainder))
+                break
+            }
+            let endIdx = remainder.index(remainder.startIndex, offsetBy: maxCharacters, limitedBy: remainder.endIndex)
+                ?? remainder.endIndex
+            var window = remainder[..<endIdx]
+            if let lastSpace = window.lastIndex(of: " "), lastSpace > remainder.startIndex {
+                window = remainder[..<lastSpace]
+            }
+            let piece = window.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !piece.isEmpty { parts.append(piece) }
+            remainder = remainder[window.endIndex...].drop(while: { $0 == " " })
+        }
+        return parts.isEmpty ? [trimmed] : parts
+    }
+
+    /// Merge very short segments with the next, except isolated tiny fragments (e.g. em-dash clauses) that should keep a boundary.
     private static func mergeShortSegments(_ segments: [String], minLength: Int) -> [String] {
         guard !segments.isEmpty else { return [] }
         var result: [String] = []
@@ -110,16 +227,41 @@ package enum TextProcessor {
                 } else {
                     result.append(segment)
                 }
-            } else {
-                // Merge carry with this segment
+                continue
+            }
+
+            if segment.count >= minLength {
                 result.append("\(carry) \(segment)")
                 carry = ""
+                continue
             }
+
+            let bothShort = carry.count < minLength && segment.count < minLength
+            let noSentencePunctAnywhere = !carry.contains(where: { ".?!…".contains($0) })
+                && !segment.contains(where: { ".?!…".contains($0) })
+            let carryEndsBreak = carry.last.map { ".?!…".contains($0) } ?? false
+            let segmentEndsBreak = segment.last.map { ".?!…".contains($0) } ?? false
+
+            if bothShort {
+                if noSentencePunctAnywhere {
+                    result.append(carry)
+                    carry = segment
+                } else if carryEndsBreak && segmentEndsBreak {
+                    result.append("\(carry) \(segment)")
+                    carry = ""
+                } else {
+                    result.append(carry)
+                    carry = segment
+                }
+                continue
+            }
+
+            result.append("\(carry) \(segment)")
+            carry = ""
         }
 
-        // If there's a trailing short segment, append it to the last result or add standalone
         if !carry.isEmpty {
-            if let last = result.last {
+            if let last = result.last, last.count >= minLength {
                 result[result.count - 1] = "\(last) \(carry)"
             } else {
                 result.append(carry)
@@ -133,7 +275,9 @@ package enum TextProcessor {
 
     /// Full cleaning pipeline: strip markup → strip symbols → normalize.
     package static func clean(_ text: String) -> String {
-        var t = text
+        var t = recoverSpacingWhenSourceStripsNewlines(text)
+        // Clause break: speak as end of sentence (pause) without requiring SSML.
+        t = t.replacingOccurrences(of: #"\s*[—–]\s*"#, with: ". ", options: .regularExpression)
         t = stripCodeBlocks(t)
         t = stripInlineCode(t)
         t = stripMarkdown(t)
@@ -196,6 +340,11 @@ package enum TextProcessor {
             of: #"(?m)^\s*[-*+]\s+(.+)$"#, with: "$1.",
             options: .regularExpression
         )
+        // Bullet character lists
+        t = t.replacingOccurrences(
+            of: #"(?m)^\s*•\s+(.+)$"#, with: "$1.",
+            options: .regularExpression
+        )
         // Ordered lists: 1. item
         t = t.replacingOccurrences(
             of: #"(?m)^\s*\d+\.\s+(.+)$"#, with: "$1.",
@@ -214,8 +363,6 @@ package enum TextProcessor {
         t = t.replacingOccurrences(of: "⌘", with: "Command ")
         t = t.replacingOccurrences(of: "⇧", with: "Shift ")
         t = t.replacingOccurrences(of: "⌃", with: "Control ")
-        // Em/en dashes → comma
-        t = t.replacingOccurrences(of: #"\s*[—–]\s*"#, with: ", ", options: .regularExpression)
         // Currency
         t = t.replacingOccurrences(of: #"\$(\d+(?:\.\d+)?)"#, with: "$1 dollars", options: .regularExpression)
         // Percentage

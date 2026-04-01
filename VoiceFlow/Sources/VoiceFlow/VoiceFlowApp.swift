@@ -11,10 +11,17 @@ final class AppModel {
     private(set) var tts: TTSEngine!
     let extractor = TextExtractor()
     private var hotkey = HotkeyState()
+    @ObservationIgnored private var overlayPanel = OverlayPanel()
 
     init() {
         self.tts = TTSEngine(status: status)
         debugLog("AppModel.init() — components created")
+        tts.playbackUiRefresh = { [weak self] in
+            self?.syncOverlayWithPlaybackState()
+        }
+        overlayPanel.onPrimaryAction = { [weak self] in
+            self?.handleOverlayPrimaryAction()
+        }
         // Defer hotkey setup to next run loop tick so self is fully initialized
         Task { @MainActor [weak self] in
             self?.setUpHotkey()
@@ -24,10 +31,15 @@ final class AppModel {
     private func setUpHotkey() {
         hotkey.setUp { @MainActor [weak self] in
             guard let self else { return }
-            debugLog("Hotkey fired — canStop=\(self.status.canStop)")
-            if self.status.canStop {
-                self.tts.stop()
-            } else {
+            debugLog("Hotkey fired — status=\(self.status.current)")
+            switch self.status.current {
+            case .processing:
+                self.stop()
+            case .playing:
+                self.tts.pause()
+            case .paused:
+                self.tts.resume()
+            default:
                 self.speakSelection()
             }
         }
@@ -36,6 +48,24 @@ final class AppModel {
 
     func speakSelection() {
         debugLog("speakSelection() called")
+        if let area = extractor.focusedTextArea(),
+           let text = extractor.textFromCurrentParagraph(in: area.element),
+           !text.isEmpty {
+            debugLog("text-area path: \(text.count) chars from cursor paragraph")
+            overlayPanel.show(at: area.frame)
+            // Do not call `syncOverlayWithPlaybackState()` here: status is still `.idle` until
+            // `speakSegments` sets `.processing`, and idle handling would immediately `hide()` the panel.
+            let segments = TextProcessor.segment(text)
+            debugLog("TextProcessor.segment() returned \(segments.count) segments")
+            guard !segments.isEmpty else {
+                debugLog("No speakable content after processing")
+                overlayPanel.hide()
+                return
+            }
+            tts.speakSegments(segments)
+            return
+        }
+
         let text = extractor.selectedText()
         debugLog("selectedText() returned: \(text == nil ? "nil" : "\(text!.count) chars: \(String(text!.prefix(80)))")")
         guard let text, !text.isEmpty else {
@@ -61,6 +91,36 @@ final class AppModel {
 
     func stop() {
         tts.stop()
+        overlayPanel.hide()
+    }
+
+    func pauseSpeaking() {
+        tts.pause()
+    }
+
+    func resumeSpeaking() {
+        tts.resume()
+    }
+
+    func handleOverlayPrimaryAction() {
+        switch status.current {
+        case .playing:
+            tts.pause()
+        case .paused:
+            tts.resume()
+        default:
+            stop()
+        }
+    }
+
+    func syncOverlayWithPlaybackState() {
+        guard overlayPanel.hasVisiblePanel else { return }
+        switch status.current {
+        case .idle:
+            overlayPanel.hide()
+        case .processing, .playing, .paused, .error:
+            overlayPanel.sync(with: status.current)
+        }
     }
 
     func quit() {
@@ -78,11 +138,33 @@ struct VoiceFlowApp: App {
 
     var body: some Scene {
         MenuBarExtra {
+            HStack(spacing: 8) {
+                Image(systemName: model.status.menuBarSymbolName)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(model.status.menuBarAccentColor ?? Color.secondary)
+                Text(model.status.statusMenuTitle)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 2)
+            .disabled(true)
+
+            Divider()
+
             Button("Speak Selection  ⌥S") {
                 debugLog("Menu button 'Speak Selection' clicked")
                 model.speakSelection()
             }
             .disabled(model.status.current == .processing)
+
+            Button("Pause") {
+                model.pauseSpeaking()
+            }
+            .disabled(!model.status.canPause)
+
+            Button("Resume") {
+                model.resumeSpeaking()
+            }
+            .disabled(!model.status.canResume)
 
             Button("Stop") {
                 model.stop()
@@ -112,7 +194,17 @@ struct VoiceFlowApp: App {
                 model.quit()
             }
         } label: {
-            Image(systemName: model.status.currentIcon)
+            if let accent = model.status.menuBarAccentColor {
+                Image(systemName: model.status.menuBarSymbolName)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(accent)
+            } else {
+                Image(systemName: model.status.menuBarSymbolName)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: model.status.current) { _, _ in
+            model.syncOverlayWithPlaybackState()
         }
     }
 }

@@ -24,6 +24,11 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
     private var preBuffer: Data?       // pre-synthesized audio for next segment
     private var preSynthTask: URLSessionDataTask?
     private var generation = 0         // bumped on stop() to discard stale callbacks
+    /// True while the current segment was paused via `pause()` (AVAudioPlayer paused).
+    private var pausedByUser = false
+
+    /// Fired after playback-related status changes so the app can refresh the floating overlay.
+    package var playbackUiRefresh: (@MainActor () -> Void)?
 
     package init(status: StatusManager) {
         self.status = status
@@ -45,6 +50,7 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
     package func speakSegments(_ newSegments: [String]) {
         debugLog("speakSegments() called with \(newSegments.count) segments")
         stop()
+        pausedByUser = false
         let filtered = newSegments.filter { !$0.isEmpty }
         guard !filtered.isEmpty else {
             debugLog("All segments were empty after filtering")
@@ -54,6 +60,7 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
         segments = filtered
         currentIndex = 0
         status.setProcessing()
+        playbackUiRefresh?()
         debugLog("Status → processing, synthesizing segment 0: \(segments[0].prefix(60))...")
 
         let gen = generation
@@ -63,6 +70,7 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
             guard let data else {
                 debugLog("Synthesis returned nil data")
                 self.status.setError()
+                self.playbackUiRefresh?()
                 return
             }
             debugLog("Synthesis OK, got \(data.count) bytes, playing...")
@@ -74,6 +82,7 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
     /// Stop all playback and cancel pending synthesis.
     package func stop() {
         generation += 1
+        pausedByUser = false
         currentTask?.cancel()
         currentTask = nil
         preSynthTask?.cancel()
@@ -86,6 +95,24 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
         status.setIdle()
     }
 
+    /// Pause the current segment. No-op if nothing is playing.
+    package func pause() {
+        guard let p = player, p.isPlaying else { return }
+        p.pause()
+        pausedByUser = true
+        status.setPaused()
+        playbackUiRefresh?()
+    }
+
+    /// Resume after `pause()`. No-op if not user-paused or player missing.
+    package func resume() {
+        guard pausedByUser, let p = player else { return }
+        guard p.play() else { return }
+        pausedByUser = false
+        status.setPlaying()
+        playbackUiRefresh?()
+    }
+
     // MARK: - AVAudioPlayerDelegate
 
     package func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -96,9 +123,11 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
     // MARK: - Queue Management
 
     private func advanceToNext() {
+        pausedByUser = false
         currentIndex += 1
         guard currentIndex < segments.count else {
             status.setIdle()
+            playbackUiRefresh?()
             return
         }
 
@@ -112,9 +141,14 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
         } else {
             // Pre-synth wasn't ready — synthesize on demand
             status.setProcessing()
+            playbackUiRefresh?()
             synthesize(segments[currentIndex]) { [weak self] data in
                 guard let self, self.generation == gen else { return }
-                guard let data else { self.status.setError(); return }
+                guard let data else {
+                    self.status.setError()
+                    self.playbackUiRefresh?()
+                    return
+                }
                 self.play(data)
                 self.preSynthNext()
             }
@@ -177,9 +211,11 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
             player?.rate = speed
             player?.play()
             status.setPlaying()
+            playbackUiRefresh?()
         } catch {
             debugLog("Playback error: \(error)")
             status.setError()
+            playbackUiRefresh?()
         }
     }
 }

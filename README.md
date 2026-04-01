@@ -90,7 +90,3 @@ make bundle    # build + create .app bundle
 make install   # build + bundle + sign + copy to ~/Applications/
 make clean     # remove build artifacts
 ```
-
-## License
-
-MIT

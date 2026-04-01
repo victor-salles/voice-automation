@@ -12,7 +12,11 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
 
     private let host: String
     private let port: String
-    private let voice: String
+    private let englishVoice: String
+    private let portugueseVoice: String
+
+    /// Kokoro voice for the active `speakSegments` queue (set when a batch starts).
+    private var activeVoice: String = ""
 
     /// Playback speed multiplier. Applied to every segment via AVAudioPlayer.rate.
     /// Range 0.5–2.0; 1.0 is normal speed.
@@ -34,20 +38,22 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
         self.status = status
         self.host = ProcessInfo.processInfo.environment["KOKORO_HOST"] ?? "localhost"
         self.port = ProcessInfo.processInfo.environment["KOKORO_PORT"] ?? "8880"
-        self.voice = ProcessInfo.processInfo.environment["KOKORO_EN_VOICE"] ?? "af_heart"
+        self.englishVoice = ProcessInfo.processInfo.environment["KOKORO_EN_VOICE"] ?? "af_heart"
+        self.portugueseVoice = ProcessInfo.processInfo.environment["KOKORO_PT_BR_VOICE"] ?? "pf_dora"
         super.init()
     }
 
     // MARK: - Public API
 
     /// Speak a single piece of text (no segmentation).
-    package func speak(_ text: String) {
-        speakSegments([text])
+    package func speak(_ text: String, language: InferredSpeakLanguage? = nil) {
+        let resolved = language ?? LanguageInference.infer(from: text)
+        speakSegments([text], language: resolved)
     }
 
     /// Speak a list of segments in order. Pre-synthesizes the next segment
     /// while the current one plays, so transitions are near-instant.
-    package func speakSegments(_ newSegments: [String]) {
+    package func speakSegments(_ newSegments: [String], language: InferredSpeakLanguage? = nil) {
         debugLog("speakSegments() called with \(newSegments.count) segments")
         stop()
         pausedByUser = false
@@ -56,6 +62,11 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
             debugLog("All segments were empty after filtering")
             return
         }
+
+        let joinedForInference = filtered.joined(separator: "\n\n")
+        let resolvedLanguage = language ?? LanguageInference.infer(from: joinedForInference)
+        activeVoice = kokoroVoice(for: resolvedLanguage)
+        debugLog("TTS language=\(resolvedLanguage.rawValue) voice=\(activeVoice)")
 
         segments = filtered
         currentIndex = 0
@@ -171,6 +182,13 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
 
     // MARK: - Synthesis and Playback
 
+    private func kokoroVoice(for language: InferredSpeakLanguage) -> String {
+        switch language {
+        case .americanEnglish: englishVoice
+        case .brazilianPortuguese: portugueseVoice
+        }
+    }
+
     private func synthesize(_ text: String, completion: @escaping (Data?) -> Void) {
         let isLocal = host == "localhost" || host == "127.0.0.1"
         let scheme = isLocal ? "http" : "https"
@@ -184,7 +202,7 @@ package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let body: [String: Any] = ["input": text, "voice": voice]
+        let body: [String: Any] = ["input": text, "voice": activeVoice]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in

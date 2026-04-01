@@ -14,6 +14,7 @@ A native macOS menu bar app that reads selected text aloud using a local Kokoro 
 - **Playback speed** — 0.75× to 2× in the Speed submenu, applied without re-synthesis
 - **Visual status** — SF Symbol in the menu bar reflects idle / processing / playing / error state
 - **Works in any app** — reads selected text via the macOS Accessibility API
+- **Language** — infers American English vs Brazilian Portuguese from the text (`NaturalLanguage`) and picks the matching Kokoro voice for the whole utterance
 
 ## Requirements
 
@@ -80,7 +81,8 @@ The speaker icon appears in the menu bar. Select text anywhere and press `⌥S`.
 |----------|---------|---------|
 | `KOKORO_HOST` | `localhost` | Kokoro server host |
 | `KOKORO_PORT` | `8880` | Kokoro server port |
-| `KOKORO_EN_VOICE` | `af_heart` | Voice ID (see Kokoro docs for options) |
+| `KOKORO_EN_VOICE` | `af_heart` | American English voice ID (Kokoro `af_*` / `am_*`) |
+| `KOKORO_PT_BR_VOICE` | `pf_dora` | Brazilian Portuguese voice ID (Kokoro `pf_*` / `pm_*`) |
 
 Set these in your shell profile or in a launchd plist `EnvironmentVariables` block.
 

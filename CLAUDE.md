@@ -16,6 +16,7 @@ Follow SOLID principles and ship the simple version first — iterate only when 
 - **VoiceFlowApp.swift** — app entry point, `AppModel` composition root, `HotkeyState` (CGEvent tap for ⌥S)
 - **StatusManager.swift** — `@Observable` status state machine (idle / processing / playing / error)
 - **TTSEngine.swift** — Kokoro HTTP client + `AVAudioPlayer` queue; pre-synthesizes segment N+1 while playing N
+- **LanguageInference.swift** — `NLLanguageRecognizer` → American English vs Brazilian Portuguese Kokoro voice
 - **TextProcessor.swift** — text segmentation and cleaning pipeline (markdown, code, symbols)
 - **TextExtractor.swift** — reads selected text from the focused app via the Accessibility API
 
@@ -40,7 +41,8 @@ First install only: System Settings → Privacy & Security → Accessibility →
 |----------|---------|---------|
 | `KOKORO_HOST` | `localhost` | Kokoro server host |
 | `KOKORO_PORT` | `8880` | Kokoro server port |
-| `KOKORO_EN_VOICE` | `af_heart` | TTS voice ID |
+| `KOKORO_EN_VOICE` | `af_heart` | American English Kokoro voice ID |
+| `KOKORO_PT_BR_VOICE` | `pf_dora` | Brazilian Portuguese Kokoro voice ID |
 
 ## Kokoro Server
 

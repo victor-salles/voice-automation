@@ -4,7 +4,7 @@ APP_BUNDLE := $(APP_NAME).app
 INSTALL_DIR := $(HOME)/Applications
 SIGN_IDENTITY := VoiceFlow Dev
 
-.PHONY: build bundle sign install clean
+.PHONY: build bundle sign install clean test
 
 build:
 	swift build -c release
@@ -28,6 +28,9 @@ install: sign
 	@echo "  Launch: open $(INSTALL_DIR)/$(APP_BUNDLE)"
 	@echo ""
 	@echo "  First install only: System Settings > Privacy & Security > Accessibility > add VoiceFlow"
+
+test:
+	swift test
 
 clean:
 	swift package clean

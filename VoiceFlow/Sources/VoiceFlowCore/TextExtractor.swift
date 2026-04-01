@@ -3,11 +3,13 @@ import ApplicationServices
 
 /// Reads selected text from the focused app via macOS Accessibility API.
 /// Stateless — no dependencies, no side effects beyond AX queries.
-struct TextExtractor {
+package struct TextExtractor {
+
+    package init() {}
 
     /// Get the currently selected text in any app.
     /// Returns nil if no text is selected or AX is unavailable.
-    func selectedText() -> String? {
+    package func selectedText() -> String? {
         guard let element = focusedElement() else { return nil }
 
         if let selected = attribute(element, kAXSelectedTextAttribute) as? String,

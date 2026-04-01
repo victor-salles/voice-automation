@@ -3,7 +3,8 @@ import Foundation
 
 /// Synthesizes speech via Kokoro HTTP API and plays with AVAudioPlayer.
 /// Supports queued playback: plays segment N while pre-synthesizing N+1.
-final class TTSEngine: NSObject, AVAudioPlayerDelegate {
+@MainActor
+package final class TTSEngine: NSObject, @preconcurrency AVAudioPlayerDelegate {
 
     private let status: StatusManager
     private var player: AVAudioPlayer?
@@ -15,7 +16,7 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
 
     /// Playback speed multiplier. Applied to every segment via AVAudioPlayer.rate.
     /// Range 0.5–2.0; 1.0 is normal speed.
-    var speed: Float = 1.0
+    package var speed: Float = 1.0
 
     // Queue state
     private var segments: [String] = []
@@ -24,7 +25,7 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
     private var preSynthTask: URLSessionDataTask?
     private var generation = 0         // bumped on stop() to discard stale callbacks
 
-    init(status: StatusManager) {
+    package init(status: StatusManager) {
         self.status = status
         self.host = ProcessInfo.processInfo.environment["KOKORO_HOST"] ?? "localhost"
         self.port = ProcessInfo.processInfo.environment["KOKORO_PORT"] ?? "8880"
@@ -35,13 +36,13 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
     // MARK: - Public API
 
     /// Speak a single piece of text (no segmentation).
-    func speak(_ text: String) {
+    package func speak(_ text: String) {
         speakSegments([text])
     }
 
     /// Speak a list of segments in order. Pre-synthesizes the next segment
     /// while the current one plays, so transitions are near-instant.
-    func speakSegments(_ newSegments: [String]) {
+    package func speakSegments(_ newSegments: [String]) {
         debugLog("speakSegments() called with \(newSegments.count) segments")
         stop()
         let filtered = newSegments.filter { !$0.isEmpty }
@@ -71,7 +72,7 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
     }
 
     /// Stop all playback and cancel pending synthesis.
-    func stop() {
+    package func stop() {
         generation += 1
         currentTask?.cancel()
         currentTask = nil
@@ -87,7 +88,7 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
 
     // MARK: - AVAudioPlayerDelegate
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    package func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         self.player = nil
         advanceToNext()
     }

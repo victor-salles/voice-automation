@@ -2,19 +2,20 @@ import SwiftUI
 
 /// Single source of truth for app state. Drives the menu bar icon.
 @Observable
-final class StatusManager {
+@MainActor
+package final class StatusManager {
 
-    enum Status {
+    package enum Status {
         case idle
         case processing
         case playing
         case error
     }
 
-    private(set) var current: Status = .idle
+    package private(set) var current: Status = .idle
 
     /// SF Symbol name for the current state.
-    var currentIcon: String {
+    package var currentIcon: String {
         switch current {
         case .idle:       return "speaker.wave.2"
         case .processing: return "speaker.badge.exclamationmark"
@@ -24,20 +25,23 @@ final class StatusManager {
     }
 
     /// Whether the stop action is available.
-    var canStop: Bool {
+    package var canStop: Bool {
         current == .processing || current == .playing
     }
 
+    package init() {}
+
     // MARK: - State transitions
 
-    func setProcessing() { current = .processing }
-    func setPlaying()    { current = .playing }
-    func setIdle()       { current = .idle }
+    package func setProcessing() { current = .processing }
+    package func setPlaying()    { current = .playing }
+    package func setIdle()       { current = .idle }
 
-    func setError() {
+    package func setError() {
         current = .error
         // Auto-reset to idle after 3 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
             guard let self, self.current == .error else { return }
             self.current = .idle
         }

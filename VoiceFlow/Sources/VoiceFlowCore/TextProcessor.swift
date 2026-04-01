@@ -2,13 +2,13 @@ import Foundation
 
 /// Pure text processing: clean markup, segment into speakable chunks.
 /// No I/O, no side effects — fully testable.
-enum TextProcessor {
+package enum TextProcessor {
 
     // MARK: - Segmentation
 
     /// Split text into speakable segments: paragraphs, list items, sentences.
     /// Each segment is cleaned and ready for TTS.
-    static func segment(_ text: String) -> [String] {
+    package static func segment(_ text: String) -> [String] {
         // First, separate structural blocks (paragraphs, list items)
         let blocks = splitIntoBlocks(text)
 
@@ -132,7 +132,7 @@ enum TextProcessor {
     // MARK: - Text Cleaning
 
     /// Full cleaning pipeline: strip markup → strip symbols → normalize.
-    static func clean(_ text: String) -> String {
+    package static func clean(_ text: String) -> String {
         var t = text
         t = stripCodeBlocks(t)
         t = stripInlineCode(t)

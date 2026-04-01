@@ -6,6 +6,8 @@ A native macOS menu bar app that reads selected text aloud using a local Kokoro 
 |------|-------|
 | ![VoiceFlow menu](docs/screenshots/menu-open.png) | ![Speed submenu](docs/screenshots/speed-submenu.png) |
 
+Screenshots updated April 2026. Asset names stay `menu-open.png` and `speed-submenu.png` so README and external links remain stable.
+
 ## Features
 
 - **Global hotkey** — `⌥S` speaks the selected text, or stops playback if already speaking

@@ -57,6 +57,11 @@ final class AppModel {
             // `speakSegments` sets `.processing`, and idle handling would immediately `hide()` the panel.
             let segments = TextProcessor.segment(text)
             debugLog("TextProcessor.segment() returned \(segments.count) segments")
+            SpeechPipelineDiagnostics.logSpeechPipelineIfEnabled(
+                source: "focusedTextAreaParagraph",
+                rawText: text,
+                segments: segments
+            )
             guard !segments.isEmpty else {
                 debugLog("No speakable content after processing")
                 overlayPanel.hide()
@@ -77,6 +82,11 @@ final class AppModel {
         for (i, seg) in segments.enumerated() {
             debugLog("  segment[\(i)]: \(seg.prefix(60))...")
         }
+        SpeechPipelineDiagnostics.logSpeechPipelineIfEnabled(
+            source: "selectedTextAX",
+            rawText: text,
+            segments: segments
+        )
         guard !segments.isEmpty else {
             debugLog("No speakable content after processing")
             return

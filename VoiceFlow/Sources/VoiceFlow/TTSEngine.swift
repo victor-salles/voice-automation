@@ -137,7 +137,9 @@ final class TTSEngine: NSObject, AVAudioPlayerDelegate {
     // MARK: - Synthesis and Playback
 
     private func synthesize(_ text: String, completion: @escaping (Data?) -> Void) {
-        guard let url = URL(string: "http://\(host):\(port)/v1/audio/speech") else {
+        let isLocal = host == "localhost" || host == "127.0.0.1"
+        let scheme = isLocal ? "http" : "https"
+        guard let url = URL(string: "\(scheme)://\(host):\(port)/v1/audio/speech") else {
             completion(nil)
             return
         }

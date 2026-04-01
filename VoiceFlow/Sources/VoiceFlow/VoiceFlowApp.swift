@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 
 // MARK: - File-based debug logging
 
+#if DEBUG
 private let logURL = URL(fileURLWithPath: "/tmp/voiceflow-debug.log")
 
 func debugLog(_ message: String) {
@@ -19,6 +20,9 @@ func debugLog(_ message: String) {
         }
     }
 }
+#else
+func debugLog(_ message: String) {}
+#endif
 
 /// Central model that owns all components. Initialized once, held by @State in the App.
 @Observable

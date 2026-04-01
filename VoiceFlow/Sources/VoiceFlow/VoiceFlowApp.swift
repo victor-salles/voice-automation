@@ -1,31 +1,10 @@
 import SwiftUI
 import Carbon.HIToolbox
-
-// MARK: - File-based debug logging
-
-#if DEBUG
-private let logURL = URL(fileURLWithPath: "/tmp/voiceflow-debug.log")
-
-func debugLog(_ message: String) {
-    let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
-    if let data = line.data(using: .utf8) {
-        if FileManager.default.fileExists(atPath: logURL.path) {
-            if let handle = try? FileHandle(forWritingTo: logURL) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                handle.closeFile()
-            }
-        } else {
-            try? data.write(to: logURL)
-        }
-    }
-}
-#else
-func debugLog(_ message: String) {}
-#endif
+import VoiceFlowCore
 
 /// Central model that owns all components. Initialized once, held by @State in the App.
 @Observable
+@MainActor
 final class AppModel {
 
     let status = StatusManager()
@@ -37,13 +16,13 @@ final class AppModel {
         self.tts = TTSEngine(status: status)
         debugLog("AppModel.init() — components created")
         // Defer hotkey setup to next run loop tick so self is fully initialized
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.setUpHotkey()
         }
     }
 
     private func setUpHotkey() {
-        hotkey.setUp { [weak self] in
+        hotkey.setUp { @MainActor [weak self] in
             guard let self else { return }
             debugLog("Hotkey fired — canStop=\(self.status.canStop)")
             if self.status.canStop {
@@ -146,10 +125,10 @@ final class HotkeyState {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var action: (() -> Void)?
+    private var action: (@MainActor () -> Void)?
 
     /// Register the ⌥S global hotkey. Call once on app launch.
-    func setUp(action: @escaping () -> Void) {
+    func setUp(action: @escaping @MainActor () -> Void) {
         self.action = action
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
@@ -197,7 +176,8 @@ final class HotkeyState {
         guard keyCode == 1, modifiers == .maskAlternate else { return false }
 
         DispatchQueue.main.async { [weak self] in
-            self?.action?()
+            guard let action = self?.action else { return }
+            MainActor.assumeIsolated { action() }
         }
         return true
     }
